@@ -45,7 +45,7 @@ jobs:
         working-directory: src-tauri
 
       - name: cargo test (medbill module — vs bundled DB)
-        run: cargo test --lib medbill::
+        run: "cargo test --lib medbill::"
         working-directory: src-tauri
 
       - name: tsc
@@ -89,7 +89,7 @@ jobs:
         run: npm ci
 
       - name: cargo test (medbill module — pre-build verification)
-        run: cargo test --lib medbill::
+        run: "cargo test --lib medbill::"
         working-directory: src-tauri
 
       - name: build with tauri
