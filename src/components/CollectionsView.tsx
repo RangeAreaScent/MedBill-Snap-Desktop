@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { exportCollectionCSV, exportCollectionPDF } from "../export";
 import { useAppData } from "../state";
 import type { CollectionItem, LibraryItem, SearchResult } from "../types";
 import { CodeRow } from "./CodeRow";
@@ -36,6 +37,7 @@ function itemToResult(i: CollectionItem): SearchResult {
 export function CollectionsView({ selected, onSelect }: Props) {
   const {
     collections,
+    notes,
     createCollection,
     renameCollection,
     deleteCollection,
@@ -46,6 +48,8 @@ export function CollectionsView({ selected, onSelect }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
+  const [busyExport, setBusyExport] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const renamingCollection = renameTarget
     ? collections.find((c) => c.id === renameTarget) ?? null
@@ -98,6 +102,40 @@ export function CollectionsView({ selected, onSelect }: Props) {
                       Rename
                     </button>
                     <button
+                      className="btn btn--small"
+                      disabled={busyExport === c.id || c.items.length === 0}
+                      onClick={async () => {
+                        setBusyExport(c.id);
+                        setExportError(null);
+                        try {
+                          await exportCollectionCSV(c, notes);
+                        } catch (e) {
+                          setExportError(String(e));
+                        } finally {
+                          setBusyExport(null);
+                        }
+                      }}
+                    >
+                      {busyExport === c.id ? "Exporting…" : "Export CSV"}
+                    </button>
+                    <button
+                      className="btn btn--small"
+                      disabled={busyExport === c.id || c.items.length === 0}
+                      onClick={async () => {
+                        setBusyExport(c.id);
+                        setExportError(null);
+                        try {
+                          await exportCollectionPDF(c, notes);
+                        } catch (e) {
+                          setExportError(String(e));
+                        } finally {
+                          setBusyExport(null);
+                        }
+                      }}
+                    >
+                      {busyExport === c.id ? "Exporting…" : "Export PDF"}
+                    </button>
+                    <button
                       className="btn btn--small btn--danger"
                       onClick={() => {
                         if (confirm(`Delete collection "${c.name}"?`)) {
@@ -109,6 +147,11 @@ export function CollectionsView({ selected, onSelect }: Props) {
                       Delete
                     </button>
                   </div>
+                  {exportError && openId === c.id && (
+                    <p className="state-msg state-msg--error state-msg--small">
+                      Export failed: {exportError}
+                    </p>
+                  )}
                   <ul className="list-inner">
                     {c.items.length === 0 && (
                       <li className="state-msg state-msg--small">

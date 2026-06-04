@@ -14,20 +14,24 @@ const NANUM_BOLD: &[u8] = include_bytes!("../resources/fonts/NanumGothic-Bold.tt
 
 #[derive(Deserialize)]
 pub struct ExportEntry {
+    /// Item-kind tag — "POS" / "MOD" / "DRG". Shown as a leading chip in
+    /// the PDF header line and as the first column in CSV exports.
+    pub kind: String,
+    /// Display code — POS code, modifier letters, or DRG number.
     pub code: String,
+    /// One-line label (POS name, modifier name, DRG name).
+    pub name: String,
+    /// Longer description, when available. Empty for DRGs (name IS the
+    /// description for them).
     pub description: String,
+    /// User's note for this item, or empty.
     pub note: String,
-    pub billable: String,
-    /// Item-kind tag (e.g. "POS", "MOD", "DRG").
-    pub category: String,
-    /// Human-readable category name (e.g. "Place of Service" / MDC name).
-    #[serde(rename = "categoryName")]
-    pub category_name: String,
-    /// Optional CMS coverage label (e.g. "Carrier judgment").
-    pub coverage: String,
-    /// Pre-joined modifier suffix the user selected (e.g. "RR-KX"). Empty
-    /// when the user added the code without modifiers.
-    pub modifiers: String,
+    /// Kind-specific compact summary — e.g.
+    ///   POS: "Effective 2003-04-01"
+    ///   MOD: "Usage: bilateral procedures | Billing impact: +50% per side"
+    ///   DRG: "MDC 05 · Medical · With CC · Wt 0.8490 · GMLOS 4.20d"
+    /// The frontend assembles this string; the renderer just lays it out.
+    pub details: String,
 }
 
 // US Letter, in millimetres.
@@ -212,29 +216,24 @@ pub fn export(path: &str, title: &str, entries: &[ExportEntry]) -> Result<(), St
     layout.gap(5.0);
 
     for e in entries {
-        let header = if e.modifiers.trim().is_empty() {
+        let header = if e.kind.is_empty() {
             e.code.clone()
         } else {
-            format!("{}-{}", e.code, e.modifiers)
+            format!("{}  {}", e.kind, e.code)
         };
         layout.text(&header, 13.0, 0.0, true);
-        layout.text(&e.description, 10.5, 0.0, false);
+        if !e.name.is_empty() {
+            layout.text(&e.name, 10.5, 0.0, false);
+        }
+        if !e.description.is_empty() && e.description != e.name {
+            layout.text(&e.description, 9.5, 5.0, false);
+        }
+        if !e.details.trim().is_empty() {
+            layout.text(&e.details, 8.5, 5.0, false);
+        }
         if !e.note.trim().is_empty() {
             layout.text(&format!("Note: {}", e.note), 9.5, 5.0, false);
         }
-        let mut meta = format!("Billable: {}", e.billable);
-        if !e.category.is_empty() {
-            let label = if e.category_name.is_empty() {
-                e.category.clone()
-            } else {
-                format!("{} — {}", e.category, e.category_name)
-            };
-            meta.push_str(&format!("   |   Category: {}", label));
-        }
-        if !e.coverage.is_empty() {
-            meta.push_str(&format!("   |   Coverage: {}", e.coverage));
-        }
-        layout.text(&meta, 8.5, 5.0, false);
         layout.gap(4.5);
     }
 
@@ -250,19 +249,17 @@ pub fn export(path: &str, title: &str, entries: &[ExportEntry]) -> Result<(), St
 mod tests {
     use super::*;
 
-    fn entry(code: &str, modifiers: &str, note: &str) -> ExportEntry {
+    fn entry(kind: &str, code: &str, note: &str) -> ExportEntry {
         ExportEntry {
+            kind: kind.into(),
             code: code.into(),
-            description: "Wheelchair, manual, with elevating legrests, fully \
-                reclining back, detachable arms (an intentionally long \
-                description so word wrapping and page flow are exercised)"
+            name: "Heart Failure and Shock with CC".into(),
+            description: "Routes to DRG 292 when a CC-level secondary diagnosis \
+                accompanies a heart-failure principal — an intentionally long \
+                description so word wrapping and page flow are exercised."
                 .into(),
             note: note.into(),
-            billable: "Yes".into(),
-            category: "E".into(),
-            category_name: "Durable Medical Equipment".into(),
-            coverage: "Carrier judgment".into(),
-            modifiers: modifiers.into(),
+            details: "MDC 05 · Medical · With CC · Wt 0.8490 · GMLOS 4.20d".into(),
         }
     }
 
@@ -270,11 +267,12 @@ mod tests {
     fn produces_a_valid_ascii_pdf() {
         let path = std::env::temp_dir().join("medbillsnap_pdf_ascii.pdf");
         let path = path.to_str().unwrap();
+        let kinds = ["POS", "MOD", "DRG"];
         let entries: Vec<ExportEntry> = (0..40)
             .map(|i| {
                 entry(
-                    &format!("E{i:04}"),
-                    if i % 4 == 0 { "RR-KX" } else { "" },
+                    kinds[i % kinds.len()],
+                    &format!("{:03}", i + 200),
                     if i % 3 == 0 { "Check coverage" } else { "" },
                 )
             })
@@ -290,8 +288,8 @@ mod tests {
     fn produces_a_small_korean_pdf() {
         let path = std::env::temp_dir().join("medbillsnap_pdf_korean.pdf");
         let path = path.to_str().unwrap();
-        let entries = vec![entry("E0114", "RR-KX", "환자 휠체어 임대 — 보험 확인 필요")];
-        export(path, "휠체어 모음", &entries).expect("korean export should succeed");
+        let entries = vec![entry("DRG", "292", "환자 케이스 — 보험 확인 필요")];
+        export(path, "심부전 라우팅 모음", &entries).expect("korean export should succeed");
 
         let bytes = std::fs::read(path).expect("output file should exist");
         assert_eq!(&bytes[..5], b"%PDF-", "missing PDF header");
