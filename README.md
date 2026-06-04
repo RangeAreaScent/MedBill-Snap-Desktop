@@ -76,6 +76,7 @@ Phase A baseline (2026-06-04): all four gates green.
 
 ## License
 
-Source: MIT (planned; LICENSE file to land in Phase B).
-Dataset: CMS public domain — see [`HANDOFF.md`](HANDOFF.md) for the full
-attribution chain.
+Source: **MIT** — see [`LICENSE`](LICENSE).
+Dataset: **CMS public domain** — see [`LICENSE`](LICENSE) and
+[`HANDOFF.md`](HANDOFF.md) for the full attribution chain.
+Bundled font (NanumGothic): **SIL Open Font License 1.1**.

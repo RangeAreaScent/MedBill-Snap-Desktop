@@ -1,0 +1,44 @@
+MIT License
+
+Copyright (c) 2026 Ryan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## Bundled data attribution
+
+The bundled SQLite database (`src-tauri/resources/medbill_v1.sqlite`) is
+derived from public-domain U.S. federal sources:
+
+- **CMS MS-DRG Definitions Manual v43.0** (FY 2026) — Centers for Medicare
+  & Medicaid Services. Public domain.
+- **CMS IPPS FY 2026 Final Rule Table 5** (DRG relative weights, GMLOS,
+  AMLOS) — CMS. Public domain.
+- **Place of Service code set** — CMS. Public domain.
+- **HCPCS Level II modifier set (alpha-numeric only)** — CMS. Public domain.
+
+AMA CPT codes and CPT modifiers are excluded by design — they are not
+in the public domain and are not redistributed by this software.
+
+## Bundled font attribution
+
+`src-tauri/resources/fonts/NanumGothic-Regular.ttf` and
+`NanumGothic-Bold.ttf` are licensed under the **SIL Open Font License 1.1**.
+See `src-tauri/resources/fonts/OFL.txt` for the full license text.

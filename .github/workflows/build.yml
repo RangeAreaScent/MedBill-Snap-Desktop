@@ -1,0 +1,108 @@
+name: build
+
+# Two paths:
+#   - check: runs on every push to main + every PR.
+#     Quick gates (cargo check, medbill tests, tsc, vite bundle) on
+#     a Linux runner. ~3 minutes; catches regressions before tagging.
+#   - build: runs on every `v*` tag push (and manually via the Actions
+#     UI). Mac universal + Windows artifacts attached to a draft release.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    # Runs on push to main and on PRs. Skipped on tag pushes
+    # (the build job covers tags with the same gates inline).
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: setup rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cache cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: install frontend deps
+        run: npm ci
+
+      - name: cargo check
+        run: cargo check
+        working-directory: src-tauri
+
+      - name: cargo test (medbill module — vs bundled DB)
+        run: cargo test --lib medbill::
+        working-directory: src-tauri
+
+      - name: tsc
+        run: npx tsc --noEmit
+
+      - name: vite bundle
+        run: npm run build
+
+  build:
+    # Only on `v*` tags + manual dispatch. Mac universal + Windows.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target universal-apple-darwin
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: setup rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: cache cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: install frontend deps
+        run: npm ci
+
+      - name: cargo test (medbill module — pre-build verification)
+        run: cargo test --lib medbill::
+        working-directory: src-tauri
+
+      - name: build with tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          # macOS signing — leave empty until Apple cert lands; unsigned
+          # build still produces a working .app + .dmg.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          args: ${{ matrix.args }}
+          tagName: ${{ github.ref_name }}
+          releaseName: 'MedBill Snap ${{ github.ref_name }}'
+          releaseDraft: true

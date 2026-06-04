@@ -4,6 +4,7 @@ version = "1.0.0"
 description = "MedBill Snap — fast offline POS / HCPCS modifier / MS-DRG / ICD→DRG lookup"
 authors = ["Ryan"]
 edition = "2021"
+license = "MIT"
 
 [lib]
 name = "medbillsnap_lib"

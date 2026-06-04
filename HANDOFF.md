@@ -14,10 +14,17 @@
 - **Deviations from playbook:** Forked from `HCPCS Snap_Mac_Win_app` (closest CMS-domain sibling). Frontend rebuilt minimal — the HCPCS-shaped React components are preserved at `_legacy_hcpcs_frontend/` as Phase B/C reference but not in the build path.
 - **Active blockers (Phase A → B handoff):**
   - **Frontend is minimal.** Phase A ships a single `App.tsx` with a 4-mode search picker (POS / Modifier / MS-DRG / ICD→DRG) and a result list. No detail pane, favorites, collections, calculator UI, DRG browser, settings, or theme system yet — those land in Phase B/C.
-  - **No app-icon swap** — inherited HCPCS icon assets still in `src-tauri/icons/`. Need a MedBill-branded set when the iOS-side icon generator (`MedBill-Snap/data/gen_icons.py`) is ready to emit desktop variants.
   - **`pdf.rs` ExportEntry shape unchanged** — still HCPCS-named fields (`category`, `categoryName`, `coverage`). Re-fits MedBill semantics on the frontend side; Phase B/C will rename when the export UI is wired.
   - **`tauri build` not yet attempted** — universal DMG / MSI smoke test pending. `cargo check` + `cargo test --lib` (medbill module) + `npm run build` all green; the bundling step is the next gate.
   - No Lemon Squeezy product registered yet (the `EXPECTED_PRODUCT_ID` no-op check inherited from HCPCS).
+- **Phase A1 mop-up landed 2026-06-04 (post-bootstrap):**
+  - **MIT LICENSE** added — first in the Snap series. Covers source MIT + bundled CMS public-domain attribution + NanumGothic OFL.
+  - **App icons regenerated** from the iOS `AppIcon.png` (1024×1024) via `npx tauri icon` — produces `icon.icns` (129 KB), `icon.ico` (24 KB), full PNG size set (32×32 through 310×310) + StoreLogo. iOS/Android icon sets also emitted (irrelevant for desktop but harmless).
+  - **CI workflow** at `.github/workflows/build.yml` — two-job design:
+    - `check` job on every push to main + every PR (ubuntu-latest, ~3 min): `cargo check` → `cargo test --lib medbill::` → `npx tsc --noEmit` → `npm run build`. Catches regressions before any tagging.
+    - `build` job on `v*` tags + manual dispatch (macOS-latest universal + windows-latest): cargo test pre-build verify → `tauri-action` → draft GitHub release with DMG / MSI / NSIS artifacts.
+    - macOS code-signing env vars (`APPLE_*`) referenced but optional — unsigned build still produces working artifacts until the Apple cert lands.
+  - **Public-facing text mop-up** — `README.md` rewritten as MedBill (was HCPCS pitch), `RELEASE.md` downgraded to Phase C placeholder, `index.html` title fixed.
 - **Phase A stability gates (all passed 2026-06-04):**
   - `cargo check` ✓ — Rust backend compiles clean (medbillsnap 1.0.0)
   - `cargo test --lib medbill::` ✓ — 7/7 unit tests pass against the bundled DB:
@@ -32,14 +39,14 @@
   - `npx tsc --noEmit` ✓ — exit 0
   - `npm run build` ✓ — Vite bundle 196 KB JS / 62 KB gzipped, 501 ms
 - **Next 3 steps (Phase B):**
-  1. **`tauri build` smoke test on macOS** — confirm the bundled DB resource resolves at runtime (`tauri::path::BaseDirectory::Resource`) and the four search modes return live data in the packaged app.
-  2. **Phase B feature wire** — port the HCPCS desktop's state/settings/components patterns from `_legacy_hcpcs_frontend/` into MedBill-shaped equivalents:
+  1. **Phase B feature wire** — port the HCPCS desktop's state/settings/components patterns from `_legacy_hcpcs_frontend/` into MedBill-shaped equivalents:
      - `state.tsx` — favorites / collections / notes keyed by `LibraryItem.key` (POS / MOD / DRG namespaced — already defined in `src/types.ts`)
      - `settings.tsx` — theme + license + appearance
      - `components/CodeRow.tsx`, `CodeDetailView.tsx` — kind-aware (POS / MOD / DRG) instead of HCPCS-only
      - `components/CCMCCCalculatorView.tsx` — new view wrapping `compute_impact` (the iOS app's spec §4-3 hook). Backend command + return type already implemented in `medbill.rs`.
      - `components/DRGBrowserView.tsx` — wraps `list_mdcs` + `list_drgs_by_mdc`.
-  3. **MedBill-branded icons** — extend `MedBill-Snap/data/gen_icons.py` to emit `icon.icns` (macOS) + `icon.ico` (Windows) + the PNG set, drop into `src-tauri/icons/`.
+  2. **`tauri build` smoke test on macOS** — confirm the bundled DB resource resolves at runtime (`tauri::path::BaseDirectory::Resource`) and the four search modes return live data in the packaged app. (Windows verification deferred — CI's `build` job covers it on tag push.)
+  3. **Lemon Squeezy product registration** — register "MedBill Snap Desktop Premium", note `product_id`, fill `EXPECTED_PRODUCT_ID` in `src-tauri/src/license.rs`.
 - **Report-back trigger:** any `tauri build` outcome, any commit touching `medbill.rs` / `lib.rs` / `tauri.conf.json`, dataset swap (next CMS quarter, FY 2027 = Oct 2026), Phase B → C handoff.
 <!-- snap-series:manager-block:end -->
 
@@ -86,8 +93,10 @@ verbatim and only replaces the domain layer.
 ```
 MedBill Snap_Mac_Win_app/
 ├── HANDOFF.md                       ← this file
-├── README.md                        ← TODO: rewrite from HCPCS template (Phase B)
-├── RELEASE.md                       ← TODO: rewrite from HCPCS template (Phase B)
+├── README.md                        ← MedBill-flavored, links to LICENSE + iOS sibling repo
+├── RELEASE.md                       ← Phase C placeholder (CI lands here when Lemon Squeezy + cert ready)
+├── LICENSE                          ← MIT + CMS public-domain attribution + OFL font notice
+├── .github/workflows/build.yml      ← check on push/PR + build on `v*` tags (Mac universal + Windows)
 ├── package.json                     ← name = "medbill-snap-desktop"
 ├── tsconfig.json                    ← include: ["src"] only — legacy dir excluded
 ├── vite.config.ts
@@ -112,7 +121,7 @@ MedBill Snap_Mac_Win_app/
     ├── tauri.conf.json              ← productName "MedBill Snap" + medbill_v1.sqlite resource
     ├── build.rs                     ← tauri-build (unchanged)
     ├── capabilities/default.json    ← webview permissions (unchanged from HCPCS)
-    ├── icons/                       ← TODO: HCPCS icons still — Phase B swap
+    ├── icons/                       ← MedBill icons (regenerated via `npx tauri icon`)
     ├── resources/
     │   ├── medbill_v1.sqlite        ← 14.6 MB CMS dataset
     │   └── fonts/NanumGothic-{Regular,Bold}.ttf
