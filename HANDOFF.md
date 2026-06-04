@@ -173,6 +173,27 @@ Detail panes, favorites, collections etc. are Phase B work.
 
 ---
 
+## 5.1 Per-app gotchas (caught during Phase A bootstrap)
+
+- **⚠ `.git` / `.github` inheritance from the rsync fork (caught 2026-06-04).**
+  The Phase A fork was done with `rsync -a --exclude='node_modules' ...`
+  but `.git/` was NOT excluded, so the upstream HCPCS desktop's git
+  history + `origin → hcpcs-snap-desktop.git` remote tagged along. The
+  inherited `.github/workflows/build.yml` would have run CI against
+  HCPCS's tag / artifact names. **A `git push` from that state would
+  have shipped MedBill commits into the HCPCS repo.** Caught at the
+  pre-commit `git remote -v` check.
+  - **Fix applied**: `rm -rf .git .github` → `git init -b main` → fresh
+    history → `gh repo create RangeAreaScent/MedBill-Snap-Desktop`
+    (the correct remote).
+  - **For future forks** (Phase B/C and any other Snap desktop port):
+    always exclude `.git` and `.github` in the initial copy. The
+    series-wide playbook `/Users/ryan/Projects/SNAP Series Plan/SNAP_SERIES_GUIDE.md` §6
+    now carries the same warning at the top of the "Fork approach"
+    section.
+
+---
+
 ## 6. Stability gates
 
 Run these before any commit that touches `medbill.rs` / `lib.rs` / `types.ts` / `api.ts`:
