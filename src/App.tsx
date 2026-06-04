@@ -1,144 +1,138 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  searchDrgs,
-  searchDrgsByIcd,
-  searchModifiers,
-  searchPos,
-} from "./api";
-import type { SearchMode, SearchResult } from "./types";
+import { useState } from "react";
+import "./styles.css";
+import { AppDataProvider, useAppData } from "./state";
+import { SettingsProvider } from "./settings";
+import type { LibraryItem } from "./types";
+import { SearchView } from "./components/SearchView";
+import { FavoritesView } from "./components/FavoritesView";
+import { CollectionsView } from "./components/CollectionsView";
+import { CodeDetailView } from "./components/CodeDetailView";
+import { CCMCCCalculatorView } from "./components/CCMCCCalculatorView";
+import { DRGBrowserView } from "./components/DRGBrowserView";
+import { SettingsView } from "./components/SettingsView";
+import { AddToCollectionModal } from "./components/AddToCollectionModal";
+import { CollectionFormModal } from "./components/CollectionFormModal";
+import { PremiumPromptModal } from "./components/PremiumPromptModal";
 
-const MODES: { id: SearchMode; label: string; placeholder: string }[] = [
-  { id: "pos", label: "POS", placeholder: "Search POS (e.g. 11, office)" },
-  { id: "modifier", label: "Modifier", placeholder: "Search HCPCS modifier (e.g. LT, bilateral)" },
-  { id: "drg", label: "MS-DRG", placeholder: "Search DRG (e.g. 291, heart failure)" },
-  { id: "icdToDrg", label: "ICD → DRG", placeholder: "Enter principal ICD-10 (e.g. I50.9)" },
+type Tab = "search" | "calculator" | "drg" | "favorites" | "collections" | "settings";
+
+const TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: "search", label: "Search", icon: "⌕" },
+  { id: "calculator", label: "Calculator", icon: "∑" },
+  { id: "drg", label: "DRG Browser", icon: "▦" },
+  { id: "favorites", label: "Favorites", icon: "★" },
+  { id: "collections", label: "Collections", icon: "▤" },
+  { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
+const LIBRARY_TABS: Tab[] = ["search", "drg", "favorites", "collections"];
+
 export default function App() {
-  const [mode, setMode] = useState<SearchMode>("pos");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const placeholder = useMemo(
-    () => MODES.find((m) => m.id === mode)?.placeholder ?? "Search…",
-    [mode],
-  );
-
-  const runSearch = useCallback(
-    async (q: string, m: SearchMode) => {
-      setLoading(true);
-      setError(null);
-      try {
-        let res: SearchResult[];
-        switch (m) {
-          case "pos":
-            res = await searchPos(q);
-            break;
-          case "modifier":
-            res = await searchModifiers(q);
-            break;
-          case "drg":
-            res = await searchDrgs(q);
-            break;
-          case "icdToDrg":
-            res = await searchDrgsByIcd(q);
-            break;
-        }
-        setResults(res);
-      } catch (e) {
-        setError(String(e));
-        setResults([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      runSearch(query, mode);
-    }, 150);
-    return () => clearTimeout(t);
-  }, [query, mode, runSearch]);
-
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <h1>MedBill Snap</h1>
-        <p className="tagline">POS · HCPCS Modifier · MS-DRG · ICD→DRG — offline.</p>
-      </header>
-
-      <div className="mode-picker" role="tablist">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            role="tab"
-            aria-selected={mode === m.id}
-            className={`mode-tab ${mode === m.id ? "active" : ""}`}
-            onClick={() => setMode(m.id)}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-
-      <input
-        className="search-input"
-        type="search"
-        value={query}
-        placeholder={placeholder}
-        onChange={(e) => setQuery(e.target.value)}
-        autoFocus
-      />
-
-      {loading && <div className="status">Searching…</div>}
-      {error && <div className="status error">Error: {error}</div>}
-
-      <ul className="result-list">
-        {results.map(renderRow)}
-      </ul>
-
-      {!loading && !error && query.trim() && results.length === 0 && (
-        <div className="status muted">No results.</div>
-      )}
-    </div>
+    <SettingsProvider>
+      <AppDataProvider>
+        <Shell />
+      </AppDataProvider>
+    </SettingsProvider>
   );
 }
 
-function renderRow(r: SearchResult) {
-  switch (r.kind) {
-    case "pos":
-      return (
-        <li key={`pos:${r.code}`} className="row row-pos">
-          <span className="chip chip-pos">POS</span>
-          <span className="code">{r.code}</span>
-          <span className="name">{r.name}</span>
-          <span className="desc">{r.description}</span>
-        </li>
-      );
-    case "modifier":
-      return (
-        <li key={`mod:${r.code}`} className="row row-mod">
-          <span className="chip chip-mod">MOD</span>
-          <span className="code">{r.code}</span>
-          <span className="name">{r.name}</span>
-          <span className="desc">{r.description}</span>
-        </li>
-      );
-    case "drg":
-      return (
-        <li key={`drg:${r.number}`} className="row row-drg">
-          <span className="chip chip-drg">DRG</span>
-          <span className="code">{r.number}</span>
-          <span className="name">{r.name}</span>
-          {r.severity && <span className="meta">{r.severity}</span>}
-          {r.relativeWeight != null && (
-            <span className="meta">Wt {r.relativeWeight.toFixed(4)}</span>
-          )}
-        </li>
-      );
+function Shell() {
+  const [tab, setTab] = useState<Tab>("search");
+  const [selected, setSelected] = useState<LibraryItem | null>(null);
+  const [addToCollectionFor, setAddToCollectionFor] = useState<LibraryItem | null>(null);
+  const [showNewCollection, setShowNewCollection] = useState(false);
+  const { createCollection, premiumPrompt, clearPremiumPrompt } = useAppData();
+
+  function openItem(item: LibraryItem) {
+    setSelected(item);
   }
+
+  return (
+    <div className="shell">
+      <nav className="tab-bar">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            className={`tab-btn${tab === t.id ? " tab-btn--on" : ""}`}
+            onClick={() => setTab(t.id)}
+            aria-current={tab === t.id ? "page" : undefined}
+          >
+            <span className="tab-icon">{t.icon}</span>
+            <span className="tab-label">{t.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <main className={`main-area main-area--${tab}`}>
+        {LIBRARY_TABS.includes(tab) && (
+          <>
+            <div className="left-pane">
+              {tab === "search" && (
+                <SearchView selected={selected} onSelect={openItem} />
+              )}
+              {tab === "drg" && (
+                <DRGBrowserView selected={selected} onSelect={openItem} />
+              )}
+              {tab === "favorites" && (
+                <FavoritesView selected={selected} onSelect={openItem} />
+              )}
+              {tab === "collections" && (
+                <CollectionsView selected={selected} onSelect={openItem} />
+              )}
+            </div>
+            <div className="right-pane">
+              {selected ? (
+                <CodeDetailView
+                  item={selected}
+                  onAddToCollection={() => setAddToCollectionFor(selected)}
+                />
+              ) : (
+                <div className="detail-empty">
+                  <p>Select an item to see details here.</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+        {tab === "calculator" && (
+          <CCMCCCalculatorView
+            onOpenDrg={(item) => {
+              setSelected(item);
+              setTab("search");
+            }}
+          />
+        )}
+        {tab === "settings" && <SettingsView />}
+      </main>
+
+      {addToCollectionFor && (
+        <AddToCollectionModal
+          item={addToCollectionFor}
+          onClose={() => setAddToCollectionFor(null)}
+          onCreateNew={() => setShowNewCollection(true)}
+        />
+      )}
+
+      {showNewCollection && (
+        <CollectionFormModal
+          title="New collection"
+          submitLabel="Create"
+          onSubmit={(name, emoji) => createCollection(name, emoji)}
+          onClose={() => setShowNewCollection(false)}
+        />
+      )}
+
+      {premiumPrompt && (
+        <PremiumPromptModal
+          message={premiumPrompt}
+          onClose={clearPremiumPrompt}
+          onGoSettings={() => {
+            clearPremiumPrompt();
+            setTab("settings");
+          }}
+        />
+      )}
+    </div>
+  );
 }

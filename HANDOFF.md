@@ -4,7 +4,7 @@
 - **App:** MedBill Snap
 - **Platform:** desktop (Mac + Windows, Tauri 2)
 - **Wave:** 3
-- **Stage:** 1 scaffold  <!-- 0 spec / 1 scaffold / 2 features / 3 release / shipped -->
+- **Stage:** 2 features  <!-- 0 spec / 1 scaffold / 2 features / 3 release / shipped -->
 - **Last updated:** 2026-06-04
 - **Repo:** local only — not a git repo yet
 - **Latest release:** none
@@ -12,11 +12,28 @@
 - **Bundle id:** `com.ryan.medbillsnap`
 - **Dataset:** bundled `medbill_v1.sqlite` 14.6 MB — full CMS Definitions Manual v43.0 + Table 5 FY 2026 weights (SHA256 `c7a79351…2574 07`, byte-identical to the iOS app's `MedBillSnap/Data/medbill_v1.sqlite`). Row counts: POS 50 · HCPCS modifiers 47 · MS-DRG 770 (all with FY 2026 weights) · MDC 26 · CC/MCC 18,432 · drg_icd_mapping 213,321 · billing_topics 8. License: CMS public domain (AMA CPT excluded by design).
 - **Deviations from playbook:** Forked from `HCPCS Snap_Mac_Win_app` (closest CMS-domain sibling). Frontend rebuilt minimal — the HCPCS-shaped React components are preserved at `_legacy_hcpcs_frontend/` as Phase B/C reference but not in the build path.
-- **Active blockers (Phase A → B handoff):**
-  - **Frontend is minimal.** Phase A ships a single `App.tsx` with a 4-mode search picker (POS / Modifier / MS-DRG / ICD→DRG) and a result list. No detail pane, favorites, collections, calculator UI, DRG browser, settings, or theme system yet — those land in Phase B/C.
-  - **`pdf.rs` ExportEntry shape unchanged** — still HCPCS-named fields (`category`, `categoryName`, `coverage`). Re-fits MedBill semantics on the frontend side; Phase B/C will rename when the export UI is wired.
-  - **`tauri build` not yet attempted** — universal DMG / MSI smoke test pending. `cargo check` + `cargo test --lib` (medbill module) + `npm run build` all green; the bundling step is the next gate.
+- **Active blockers (Phase B → C handoff):**
+  - **CSS is utility-only.** Phase B added ~330 lines of MedBill-specific styles to `styles.css` for legibility of new components (tab bar, chips, calculator, browser cards, calc pills). The inherited HCPCS theme tokens (`--bg`, `--accent`, `--border` etc.) still drive overall look. **Phase C task**: full retheme + premium-theme verification across all 6 tabs.
+  - **`pdf.rs` ExportEntry shape unchanged** — still HCPCS-named fields (`category`, `categoryName`, `coverage`). MedBill `export.ts` driver not ported yet. Add to-CSV / to-PDF in Phase C alongside the export UI button in CollectionDetailView.
+  - **`AddCodeModal` not ported** — the legacy HCPCS pattern allowed manually adding a code by typing the code string. Less applicable to MedBill (4 separate item types), so deferred until Phase C feature-prioritization decides whether it's needed.
+  - **`tauri build` not yet attempted** — universal DMG smoke test pending. `cargo check` + `cargo test --lib` (medbill module) + `npm run build` all green; the bundling step is the next gate (Windows verification deferred — CI's `build` job covers it on tag push).
   - No Lemon Squeezy product registered yet (the `EXPECTED_PRODUCT_ID` no-op check inherited from HCPCS).
+- **Phase B feature wire landed 2026-06-04:**
+  - **Tab shell** — new `App.tsx` 6-tab layout: Search · Calculator · DRG Browser · Favorites · Collections · Settings. Master-detail split-pane for the four library tabs (left list + right detail); full-width for Calculator + Settings.
+  - **State providers** — `state.tsx` (favorites/collections/notes keyed by `LibraryItem.key` — POS/MOD/DRG namespaced) + `settings.tsx` (theme · font · text size · license · hidden override). Freemium caps preserved (15 favorites / 10 collections free; unlimited on premium).
+  - **Components** (12 new under `src/components/`):
+    - `SearchView` — 4-mode picker (POS · Modifier · MS-DRG · ICD→DRG) with 180 ms debounced search
+    - `CodeRow` — kind-aware chip (POS blue, MOD teal, DRG purple) with star toggle
+    - `CodeDetailView` — kind-aware body sections (POS notes/dates · MOD usage/billing/category/year · DRG weight/GMLOS/AMLOS/MDC/FY) + per-item notes textarea
+    - `FavoritesView` / `CollectionsView` — accept all three kinds, re-render via `Favorite/CollectionItem → SearchResult` reconstruction
+    - `AddToCollectionModal` — pick-list with already-added state
+    - `CCMCCCalculatorView` (MedBill-first) — principal ICD-10 + secondary pill-list with auto-classified CC/MCC chips → live `compute_impact` → routed DRG + baseline-vs-routed weight delta + candidate list with severity badges + "Open" handoff to detail
+    - `DRGBrowserView` (MedBill-first) — 26 MDC cards with per-MDC DRG count; expand to load via `list_drgs_by_mdc`
+    - `SettingsView` — full Appearance (free + premium themes, font, text size) + Premium box (license activate/validate/deactivate + hidden 6-tap rhythm for override) + MedBill Data section (full row-count table) + About
+    - Reused verbatim (zero changes): `Modal`, `PremiumPromptModal`, `CollectionFormModal`
+  - **CSS** — ~330 lines of MedBill-specific rules appended to `styles.css` for new class names (`.shell`, `.tab-bar`, `.code-chip--{pos,mod,drg}`, `.calc-view`, `.pill--{mcc,cc,none}`, `.weight-delta`, `.delta--{pos,neg}`, `.mdc-card`, etc.). Inherited theme tokens still drive overall look (Phase C retheme).
+  - **Bundle delta**: JS 196 KB → 249 KB (+53 KB), CSS 0 KB → 32 KB (newly bundled — Phase A's minimal App didn't import styles.css). Gzipped: 62 KB → 75 KB JS + 6.5 KB CSS.
+
 - **Phase A1 mop-up landed 2026-06-04 (post-bootstrap):**
   - **MIT LICENSE** added — first in the Snap series. Covers source MIT + bundled CMS public-domain attribution + NanumGothic OFL.
   - **App icons regenerated** from the iOS `AppIcon.png` (1024×1024) via `npx tauri icon` — produces `icon.icns` (129 KB), `icon.ico` (24 KB), full PNG size set (32×32 through 310×310) + StoreLogo. iOS/Android icon sets also emitted (irrelevant for desktop but harmless).
@@ -38,15 +55,10 @@
   - `npm install` ✓ — 75 packages, 0 vulnerabilities
   - `npx tsc --noEmit` ✓ — exit 0
   - `npm run build` ✓ — Vite bundle 196 KB JS / 62 KB gzipped, 501 ms
-- **Next 3 steps (Phase B):**
-  1. **Phase B feature wire** — port the HCPCS desktop's state/settings/components patterns from `_legacy_hcpcs_frontend/` into MedBill-shaped equivalents:
-     - `state.tsx` — favorites / collections / notes keyed by `LibraryItem.key` (POS / MOD / DRG namespaced — already defined in `src/types.ts`)
-     - `settings.tsx` — theme + license + appearance
-     - `components/CodeRow.tsx`, `CodeDetailView.tsx` — kind-aware (POS / MOD / DRG) instead of HCPCS-only
-     - `components/CCMCCCalculatorView.tsx` — new view wrapping `compute_impact` (the iOS app's spec §4-3 hook). Backend command + return type already implemented in `medbill.rs`.
-     - `components/DRGBrowserView.tsx` — wraps `list_mdcs` + `list_drgs_by_mdc`.
-  2. **`tauri build` smoke test on macOS** — confirm the bundled DB resource resolves at runtime (`tauri::path::BaseDirectory::Resource`) and the four search modes return live data in the packaged app. (Windows verification deferred — CI's `build` job covers it on tag push.)
-  3. **Lemon Squeezy product registration** — register "MedBill Snap Desktop Premium", note `product_id`, fill `EXPECTED_PRODUCT_ID` in `src-tauri/src/license.rs`.
+- **Next 3 steps (Phase C):**
+  1. **`tauri build` smoke test on macOS** — confirm the bundled DB resource resolves at runtime (`tauri::path::BaseDirectory::Resource`), each tab renders against live data, and the calculator returns end-to-end correct routings in the packaged app. (Windows verification deferred — CI's `build` job covers it on tag push.)
+  2. **Full retheme + premium-theme polish** — verify all 7 themes (3 free + 4 premium) render cleanly across all 6 tabs. Audit the inherited HCPCS theme tokens for MedBill-appropriate accent colors (purple-DRG, teal-MOD).
+  3. **Export wiring + Lemon Squeezy product** — port `export.ts` from the legacy frontend (kind-aware CSV/PDF row composition), update `pdf.rs` ExportEntry field semantics. Register Lemon Squeezy product, fill `EXPECTED_PRODUCT_ID`.
 - **Report-back trigger:** any `tauri build` outcome, any commit touching `medbill.rs` / `lib.rs` / `tauri.conf.json`, dataset swap (next CMS quarter, FY 2027 = Oct 2026), Phase B → C handoff.
 <!-- snap-series:manager-block:end -->
 
