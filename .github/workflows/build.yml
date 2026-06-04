@@ -37,6 +37,20 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: install Tauri linux system deps
+        # Required for `cargo check` to resolve the GTK / WebKit2GTK system
+        # libraries that Tauri's Linux backend links against. macOS + Windows
+        # ship these in the platform SDK; ubuntu doesn't.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libglib2.0-dev
+
       - name: install frontend deps
         run: npm ci
 
