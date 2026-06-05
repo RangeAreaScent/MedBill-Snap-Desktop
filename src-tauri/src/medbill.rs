@@ -127,7 +127,7 @@ pub struct CcMccEntry {
     pub description: Option<String>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ImpactCandidate {
     pub number: String,
@@ -889,3 +889,636 @@ mod tests {
         assert_eq!(t.len(), 8);
     }
 }
+
+/// Real-user search scenarios — partial numbers, abbreviations, common
+/// disease names, format variants, edge cases. Run with `--nocapture` to
+/// see what the search actually returns:
+///   cargo test --lib realistic -- --nocapture
+#[cfg(test)]
+mod realistic_search_scenarios {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn db() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/medbill_v1.sqlite")
+    }
+
+    // ---------- helpers — print top results so a human can eyeball ----------
+
+    fn print_header(scenario: &str, query: &str, mode: &str) {
+        println!(
+            "\n──── {scenario:<55} [{mode}] q={query:?}",
+            scenario = scenario,
+            mode = mode,
+            query = query,
+        );
+    }
+
+    fn print_results(results: &[SearchResult], cap: usize) {
+        if results.is_empty() {
+            println!("    (no results)");
+            return;
+        }
+        for r in results.iter().take(cap) {
+            match r {
+                SearchResult::Pos { code, name, .. } => {
+                    println!("    POS {code:<4} {name}", code = code, name = name);
+                }
+                SearchResult::Modifier {
+                    code,
+                    name,
+                    category,
+                    ..
+                } => {
+                    println!(
+                        "    MOD {code:<4} {name}  [{cat}]",
+                        code = code,
+                        name = name,
+                        cat = category.as_deref().unwrap_or("-"),
+                    );
+                }
+                SearchResult::Drg {
+                    number,
+                    name,
+                    severity,
+                    relative_weight,
+                    ..
+                } => {
+                    println!(
+                        "    DRG {n:<4} {name:<60.60}  {sev:<16} {w}",
+                        n = number,
+                        name = name,
+                        sev = severity.as_deref().unwrap_or("-"),
+                        w = relative_weight
+                            .map(|w| format!("Wt {:.4}", w))
+                            .unwrap_or_else(|| "Wt —".into()),
+                    );
+                }
+            }
+        }
+        if results.len() > cap {
+            println!("    … (+{} more)", results.len() - cap);
+        }
+    }
+
+    fn drg_numbers(results: &[SearchResult]) -> Vec<String> {
+        results
+            .iter()
+            .filter_map(|r| match r {
+                SearchResult::Drg { number, .. } => Some(number.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    // =====================================================================
+    // POS — Place of Service (50 codes)
+    // =====================================================================
+
+    #[test]
+    fn pos_office_by_number_and_word() {
+        let by_num = search_pos(&db(), "11", 5).unwrap();
+        print_header("POS 11 by number", "11", "pos");
+        print_results(&by_num, 5);
+        assert!(by_num.iter().any(|r| matches!(r, SearchResult::Pos { code, .. } if code == "11")));
+
+        let by_word = search_pos(&db(), "office", 5).unwrap();
+        print_header("POS by word 'office'", "office", "pos");
+        print_results(&by_word, 5);
+        assert!(by_word.iter().any(|r| matches!(r, SearchResult::Pos { code, .. } if code == "11")));
+    }
+
+    #[test]
+    fn pos_single_digit_prefix_matches_two_digit_codes() {
+        // User types "1" — they probably want POS 10–19 or POS 01.
+        let r = search_pos(&db(), "1", 50).unwrap();
+        print_header("POS single-digit '1' prefix", "1", "pos");
+        print_results(&r, 12);
+        // Should find at least 11 (Office) and 12 (Home).
+        let codes: Vec<_> = r
+            .iter()
+            .filter_map(|x| match x {
+                SearchResult::Pos { code, .. } => Some(code.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(codes.contains(&"11".to_string()), "expected '11' in: {codes:?}");
+        assert!(codes.contains(&"12".to_string()), "expected '12' in: {codes:?}");
+    }
+
+    #[test]
+    fn pos_emergency_inpatient_telehealth_keywords() {
+        for (label, q, expect_code) in [
+            ("emergency room", "emergency", "23"),
+            ("inpatient hospital", "inpatient", "21"),
+            ("ambulance", "ambulance", "41"), // 41 land, 42 air-water
+            ("nursing facility", "nursing", "31"), // 31 SNF, 32 NF
+        ] {
+            let r = search_pos(&db(), q, 5).unwrap();
+            print_header(label, q, "pos");
+            print_results(&r, 5);
+            let codes: Vec<_> = r
+                .iter()
+                .filter_map(|x| match x {
+                    SearchResult::Pos { code, .. } => Some(code.clone()),
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                codes.contains(&expect_code.to_string()),
+                "expected POS '{expect_code}' for query '{q}', got: {codes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pos_uppercase_query_works() {
+        let r = search_pos(&db(), "HOME", 5).unwrap();
+        print_header("uppercase 'HOME'", "HOME", "pos");
+        print_results(&r, 5);
+        assert!(!r.is_empty(), "uppercase 'HOME' should match POS 12 (Home)");
+    }
+
+    #[test]
+    fn pos_empty_returns_nothing() {
+        assert!(search_pos(&db(), "", 50).unwrap().is_empty());
+        assert!(search_pos(&db(), "   ", 50).unwrap().is_empty());
+    }
+
+    #[test]
+    fn pos_nonsense_returns_nothing() {
+        let r = search_pos(&db(), "xyzqq", 50).unwrap();
+        print_header("nonsense 'xyzqq'", "xyzqq", "pos");
+        print_results(&r, 5);
+        assert!(r.is_empty());
+    }
+
+    // =====================================================================
+    // Modifiers — HCPCS Level II (47 modifiers)
+    // =====================================================================
+
+    #[test]
+    fn modifier_letter_prefix_l_finds_lt_family() {
+        let r = search_modifiers(&db(), "L", 30).unwrap();
+        print_header("modifier prefix 'L'", "L", "modifier");
+        print_results(&r, 12);
+        let codes: Vec<_> = r
+            .iter()
+            .filter_map(|x| match x {
+                SearchResult::Modifier { code, .. } => Some(code.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(codes.contains(&"LT".to_string()), "expected LT in: {codes:?}");
+    }
+
+    #[test]
+    fn modifier_bilateral_word_documents_data_gap() {
+        // KNOWN DATA GAP (caught by realistic-search audit 2026-06-04):
+        // CMS modifier 50 ("Bilateral Procedure" — the canonical bilateral
+        // marker for paid surgeries) is NOT in the bundled dataset. The
+        // 47-modifier seed list excluded it. LT/RT exist, but '50' and the
+        // word "bilateral" both miss every row.
+        // If this starts returning hits, the seed has been fixed — update
+        // the assertion to verify modifier 50 is present.
+        let r = search_modifiers(&db(), "bilateral", 5).unwrap();
+        print_header("'bilateral' (DATA GAP — modifier 50 missing)", "bilateral", "modifier");
+        print_results(&r, 5);
+        assert!(
+            r.is_empty(),
+            "if 'bilateral' now returns hits, fix the seed → update this assertion"
+        );
+    }
+
+    #[test]
+    fn fts_ranking_observations_pos_office() {
+        // UX OBSERVATION: typing "office" should naturally float POS 11
+        // ("Office") to the top, but FTS5's BM25 ranks descriptions that
+        // contain "office" multiple times above the bare-name match.
+        // Documents current behavior; Phase D could weight name-matches
+        // heavier than description-matches.
+        let r = search_pos(&db(), "office", 10).unwrap();
+        print_header(
+            "FTS ranking: 'office' (POS 11 should ideally be first)",
+            "office",
+            "pos",
+        );
+        print_results(&r, 10);
+        // Soft assertion: POS 11 appears SOMEWHERE in the top 10.
+        let codes: Vec<_> = r
+            .iter()
+            .filter_map(|x| match x {
+                SearchResult::Pos { code, .. } => Some(code.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(codes.contains(&"11".to_string()), "POS 11 should at least be present");
+        // Documented: as of 2026-06-04, POS 11 is NOT first — other codes
+        // whose long descriptions mention "office" rank higher.
+        let first_is_11 = codes.first().map(|c| c == "11").unwrap_or(false);
+        if !first_is_11 {
+            println!(
+                "    ⚠ POS 11 not first — first match: {:?}",
+                codes.first()
+            );
+        }
+    }
+
+    #[test]
+    fn fts_ranking_observations_pos_home_matches_homeless_first() {
+        // UX OBSERVATION: typing "home" returns POS 04 (Homeless Shelter)
+        // before POS 12 (Home) because BM25 favors the longer description.
+        // A smarter rank would prefer exact name-token matches.
+        let r = search_pos(&db(), "home", 10).unwrap();
+        print_header(
+            "FTS ranking: 'home' (POS 12 = Home should rank above POS 04 Homeless)",
+            "home",
+            "pos",
+        );
+        print_results(&r, 10);
+        let codes: Vec<_> = r
+            .iter()
+            .filter_map(|x| match x {
+                SearchResult::Pos { code, .. } => Some(code.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(codes.contains(&"12".to_string()), "POS 12 should be present");
+    }
+
+    #[test]
+    fn modifier_lowercase_lt() {
+        // User often types lowercase. Code-prefix is uppercased internally.
+        let r = search_modifiers(&db(), "lt", 5).unwrap();
+        print_header("lowercase 'lt'", "lt", "modifier");
+        print_results(&r, 5);
+        let codes: Vec<_> = r
+            .iter()
+            .filter_map(|x| match x {
+                SearchResult::Modifier { code, .. } => Some(code.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(codes.contains(&"LT".to_string()));
+    }
+
+    #[test]
+    fn modifier_anatomical_f1_finger() {
+        let r = search_modifiers(&db(), "F1", 5).unwrap();
+        print_header("finger 'F1'", "F1", "modifier");
+        print_results(&r, 5);
+        let codes: Vec<_> = r
+            .iter()
+            .filter_map(|x| match x {
+                SearchResult::Modifier { code, .. } => Some(code.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(codes.contains(&"F1".to_string()) || !r.is_empty(),
+            "expected F1 (or at least some F-series match) in: {codes:?}");
+    }
+
+    #[test]
+    fn modifier_empty_lists_all() {
+        let r = search_modifiers(&db(), "", 100).unwrap();
+        print_header("empty modifier query (lists all)", "", "modifier");
+        print_results(&r, 5);
+        assert!(r.len() >= 47, "expected all 47 modifiers, got {}", r.len());
+    }
+
+    // =====================================================================
+    // MS-DRG — 770 codes
+    // =====================================================================
+
+    #[test]
+    fn drg_full_number_291() {
+        let r = search_drgs(&db(), "291", 5).unwrap();
+        print_header("DRG 291 by full number", "291", "drg");
+        print_results(&r, 5);
+        let nums = drg_numbers(&r);
+        assert!(nums.contains(&"291".to_string()));
+    }
+
+    #[test]
+    fn drg_partial_number_29x() {
+        // "29" prefix — user types middle of number, wants the 290s family.
+        let r = search_drgs(&db(), "29", 30).unwrap();
+        print_header("DRG prefix '29'", "29", "drg");
+        print_results(&r, 12);
+        let nums = drg_numbers(&r);
+        for expected in ["291", "292", "293"] {
+            assert!(
+                nums.contains(&expected.to_string()),
+                "expected DRG {expected} in: {nums:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn drg_single_digit_prefix_5() {
+        // Lots of DRGs start with 5 — DRG 5 itself, 50–59, 500–599. User
+        // intent is ambiguous, but we should at least surface SOMETHING.
+        let r = search_drgs(&db(), "5", 30).unwrap();
+        print_header("DRG single-digit prefix '5'", "5", "drg");
+        print_results(&r, 15);
+        assert!(!r.is_empty(), "single-digit '5' should match at least one DRG");
+    }
+
+    #[test]
+    fn drg_three_digit_prefix_47x_joint_replacement() {
+        // Joint replacement DRGs sit at 469/470/521-523. User types "47".
+        let r = search_drgs(&db(), "47", 20).unwrap();
+        print_header("DRG prefix '47' (joint replacement)", "47", "drg");
+        print_results(&r, 8);
+        let nums = drg_numbers(&r);
+        assert!(nums.contains(&"470".to_string()),
+            "expected DRG 470 (joint replacement w/o MCC), got: {nums:?}");
+    }
+
+    #[test]
+    fn drg_word_heart_failure_finds_triplet() {
+        let r = search_drgs(&db(), "heart failure", 10).unwrap();
+        print_header("'heart failure'", "heart failure", "drg");
+        print_results(&r, 6);
+        let nums = drg_numbers(&r);
+        for n in ["291", "292", "293"] {
+            assert!(nums.contains(&n.to_string()), "expected {n} in: {nums:?}");
+        }
+    }
+
+    #[test]
+    fn drg_abbreviation_chf_expands_to_heart_failure() {
+        // 'CHF' is in abbreviations.rs → "heart failure".
+        let r = search_drgs(&db(), "CHF", 10).unwrap();
+        print_header("abbrev 'CHF' (→ heart failure)", "CHF", "drg");
+        print_results(&r, 6);
+        let nums = drg_numbers(&r);
+        assert!(
+            nums.contains(&"291".to_string()),
+            "CHF expansion should reach DRG 291 (Heart Failure with MCC); got {nums:?}"
+        );
+    }
+
+    #[test]
+    fn drg_abbreviation_copd() {
+        let r = search_drgs(&db(), "COPD", 10).unwrap();
+        print_header("abbrev 'COPD'", "COPD", "drg");
+        print_results(&r, 6);
+        let nums = drg_numbers(&r);
+        // COPD DRGs are 190/191/192.
+        assert!(
+            nums.iter().any(|n| ["190", "191", "192"].contains(&n.as_str())),
+            "COPD should reach DRG 190/191/192; got {nums:?}"
+        );
+    }
+
+    #[test]
+    fn drg_word_sepsis() {
+        let r = search_drgs(&db(), "sepsis", 10).unwrap();
+        print_header("'sepsis'", "sepsis", "drg");
+        print_results(&r, 6);
+        let nums = drg_numbers(&r);
+        // Sepsis triplet is 870/871/872.
+        assert!(
+            nums.iter().any(|n| ["870", "871", "872"].contains(&n.as_str())),
+            "sepsis should reach DRG 870/871/872; got {nums:?}"
+        );
+    }
+
+    #[test]
+    fn drg_word_pneumonia() {
+        let r = search_drgs(&db(), "pneumonia", 10).unwrap();
+        print_header("'pneumonia'", "pneumonia", "drg");
+        print_results(&r, 6);
+        let nums = drg_numbers(&r);
+        assert!(!nums.is_empty(), "'pneumonia' should return at least one DRG");
+    }
+
+    #[test]
+    fn drg_word_stroke() {
+        let r = search_drgs(&db(), "stroke", 10).unwrap();
+        print_header("'stroke'", "stroke", "drg");
+        print_results(&r, 6);
+        // We expect AT LEAST one stroke-named DRG.
+        assert!(!r.is_empty(), "'stroke' should return at least one DRG");
+    }
+
+    #[test]
+    fn drg_uppercase_lowercase_mixed() {
+        let upper = drg_numbers(&search_drgs(&db(), "HEART FAILURE", 10).unwrap());
+        let lower = drg_numbers(&search_drgs(&db(), "heart failure", 10).unwrap());
+        let mixed = drg_numbers(&search_drgs(&db(), "HeArT FaIlUrE", 10).unwrap());
+        print_header("case insensitivity check", "HEART/heart/HeArT", "drg");
+        println!("    upper: {upper:?}");
+        println!("    lower: {lower:?}");
+        println!("    mixed: {mixed:?}");
+        assert_eq!(upper, lower, "upper/lower DRG results should match");
+        assert_eq!(lower, mixed, "lower/mixed DRG results should match");
+    }
+
+    #[test]
+    fn drg_empty_returns_nothing() {
+        assert!(search_drgs(&db(), "", 50).unwrap().is_empty());
+    }
+
+    // =====================================================================
+    // ICD → DRG routing (reverse lookup mode)
+    // =====================================================================
+
+    #[test]
+    fn icd_i509_routes_to_triplet_plus_neonate() {
+        let r = search_drgs_by_icd(&db(), "I50.9", 20).unwrap();
+        print_header("ICD I50.9 → DRG", "I50.9", "icdToDrg");
+        print_results(&r, 10);
+        let nums = drg_numbers(&r);
+        for n in ["291", "292", "293"] {
+            assert!(nums.contains(&n.to_string()), "{n} missing");
+        }
+        // Cross-MDC: I50.9 also routes to newborn (MDC 15) DRGs.
+        assert!(
+            nums.iter().any(|n| ["791", "793"].contains(&n.as_str())),
+            "expected cross-MDC newborn routing 791/793; got: {nums:?}"
+        );
+    }
+
+    #[test]
+    fn icd_lowercase_and_whitespace_normalized() {
+        let canon = drg_numbers(&search_drgs_by_icd(&db(), "I50.9", 10).unwrap());
+        let lower = drg_numbers(&search_drgs_by_icd(&db(), "i50.9", 10).unwrap());
+        let padded = drg_numbers(&search_drgs_by_icd(&db(), "  I50.9  ", 10).unwrap());
+        let spaced = drg_numbers(&search_drgs_by_icd(&db(), "I50 .9", 10).unwrap());
+        print_header(
+            "ICD format variants (lowercase, spaces, padding)",
+            "I50.9 variants",
+            "icdToDrg",
+        );
+        println!("    canonical 'I50.9' → {canon:?}");
+        println!("    lowercase 'i50.9' → {lower:?}");
+        println!("    padded '  I50.9  ' → {padded:?}");
+        println!("    spaced  'I50 .9' → {spaced:?}");
+        assert_eq!(canon, lower, "lowercase should match");
+        assert_eq!(canon, padded, "padding should match");
+        assert_eq!(
+            canon, spaced,
+            "internal spaces should be stripped (user types ICD with stray spaces)"
+        );
+    }
+
+    #[test]
+    fn icd_dotless_form_is_not_currently_matched() {
+        // Known limitation: DB stores codes in canonical dotted form
+        // ("I50.9"). Dotless user input ("I509") doesn't auto-restore the
+        // dot — would need a smarter normalizer. Documenting current
+        // behavior so a future fix has a regression target.
+        let dotted = drg_numbers(&search_drgs_by_icd(&db(), "I50.9", 10).unwrap());
+        let dotless = drg_numbers(&search_drgs_by_icd(&db(), "I509", 10).unwrap());
+        print_header(
+            "ICD dotted vs dotless form (known limitation)",
+            "I50.9 vs I509",
+            "icdToDrg",
+        );
+        println!("    dotted  'I50.9' → {} hits", dotted.len());
+        println!("    dotless 'I509'  → {} hits", dotless.len());
+        assert!(!dotted.is_empty(), "dotted should work");
+        assert!(
+            dotless.is_empty(),
+            "dotless currently doesn't match — if this starts passing, \
+             update the normalizer comment in normalize_icd()"
+        );
+    }
+
+    #[test]
+    fn icd_three_char_category_codes() {
+        // Three-char category codes (no decimal point) — e.g. A09, B20.
+        for code in ["A09", "B20"] {
+            let r = search_drgs_by_icd(&db(), code, 10).unwrap();
+            print_header(&format!("ICD 3-char category {code}"), code, "icdToDrg");
+            print_results(&r, 5);
+            assert!(!r.is_empty(), "3-char {code} should route to at least one DRG");
+        }
+    }
+
+    #[test]
+    fn icd_common_sepsis_a419_routes_to_870s() {
+        let r = search_drgs_by_icd(&db(), "A41.9", 10).unwrap();
+        print_header("ICD A41.9 (sepsis) → DRG", "A41.9", "icdToDrg");
+        print_results(&r, 8);
+        let nums = drg_numbers(&r);
+        for n in ["870", "871", "872"] {
+            assert!(nums.contains(&n.to_string()), "expected {n}, got: {nums:?}");
+        }
+    }
+
+    #[test]
+    fn icd_unknown_returns_empty() {
+        let r = search_drgs_by_icd(&db(), "Z99.9", 10).unwrap();
+        print_header("ICD unknown 'Z99.9'", "Z99.9", "icdToDrg");
+        print_results(&r, 3);
+        assert!(r.is_empty());
+    }
+
+    // =====================================================================
+    // CC/MCC classify + impact
+    // =====================================================================
+
+    #[test]
+    fn classify_real_examples() {
+        let cases = [
+            ("N17.9", CcMccLevel::Cc, "AKI unspecified — CC per Appendix G"),
+            ("J18.9", CcMccLevel::Mcc, "Pneumonia unspecified — MCC per Appendix H"),
+            ("I50.21", CcMccLevel::Mcc, "Acute systolic heart failure — MCC"),
+            ("Z99.9", CcMccLevel::None, "garbage / unknown"),
+        ];
+        println!("\n──── CC/MCC classification real-world ICDs");
+        for (icd, expected, why) in cases {
+            let r = classify_icd(&db(), icd).unwrap();
+            println!(
+                "    {icd:<8} → {actual:<5}  (expected {expected:?}) — {why}",
+                icd = icd,
+                actual = format!("{:?}", r.level),
+            );
+            assert_eq!(r.level, expected, "{icd}: {why}");
+        }
+    }
+
+    #[test]
+    fn impact_i509_with_various_secondaries() {
+        let cases = [
+            (vec![], CcMccLevel::None, "293", "no secondaries → without CC/MCC"),
+            (vec!["N17.9"], CcMccLevel::Cc, "292", "+ AKI CC → with CC"),
+            (vec!["J18.9"], CcMccLevel::Mcc, "291", "+ pneumonia MCC → with MCC"),
+            (vec!["N17.9", "J18.9"], CcMccLevel::Mcc, "291", "AKI + pneumonia → MCC wins"),
+            (vec!["Z99.9"], CcMccLevel::None, "293", "garbage secondary doesn't elevate"),
+        ];
+        println!("\n──── Impact calc — principal=I50.9 + various secondaries");
+        for (secs, expected_level, expected_drg, desc) in cases {
+            let r = compute_impact(
+                &db(),
+                "I50.9",
+                &secs.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            )
+            .unwrap();
+            let routed = r.routed_drg.as_ref().map(|c| c.number.clone()).unwrap_or_default();
+            println!(
+                "    secs={secs:?} → level={level:?} routed=DRG {routed:<3}  ({desc})",
+                level = r.highest_secondary_level,
+                routed = routed,
+            );
+            assert_eq!(r.highest_secondary_level, expected_level, "{desc}");
+            assert_eq!(routed, expected_drg, "{desc}");
+        }
+    }
+
+    #[test]
+    fn impact_weight_delta_positive_when_mcc_elevates() {
+        // No-secondaries baseline = DRG 293 (Wt 0.566).
+        // + N17.9 CC → DRG 292 (Wt 0.849). Delta should be ~+0.283.
+        let r = compute_impact(&db(), "I50.9", &["N17.9".into()]).unwrap();
+        let baseline_w = r.baseline_drg.as_ref().and_then(|c| c.relative_weight);
+        let routed_w = r.routed_drg.as_ref().and_then(|c| c.relative_weight);
+        println!(
+            "\n──── Weight delta: I50.9 baseline → +N17.9 routed\n    baseline={baseline:?} routed={routed:?} delta={delta:?}",
+            baseline = baseline_w,
+            routed = routed_w,
+            delta = r.weight_delta,
+        );
+        assert!(r.weight_delta.unwrap() > 0.0, "CC elevation should increase weight");
+    }
+
+    #[test]
+    fn impact_unknown_principal_returns_empty_candidates() {
+        let r = compute_impact(&db(), "Z99.9", &["N17.9".into()]).unwrap();
+        println!(
+            "\n──── Impact with unknown principal Z99.9: candidates={}, routed={:?}",
+            r.candidate_drgs.len(),
+            r.routed_drg
+        );
+        assert!(r.candidate_drgs.is_empty());
+        assert!(r.routed_drg.is_none());
+    }
+
+    // =====================================================================
+    // Mode collisions — typing in wrong mode shouldn't crash
+    // =====================================================================
+
+    #[test]
+    fn typing_icd_in_drg_mode_doesnt_crash() {
+        // User accidentally types ICD in DRG mode. Should return empty or
+        // a FTS match (DRG names containing "I50") — never crash.
+        let r = search_drgs(&db(), "I50.9", 5).unwrap();
+        print_header("ICD 'I50.9' typed in DRG mode", "I50.9", "drg");
+        print_results(&r, 5);
+        // No assertion on count — just that the call succeeded.
+    }
+
+    #[test]
+    fn typing_drg_number_in_pos_mode_doesnt_crash() {
+        // User types "291" in POS mode. POS codes are 01-99 so "29"
+        // partial matches but "291" exceeds 2-char POS range.
+        let r = search_pos(&db(), "291", 5).unwrap();
+        print_header("DRG number '291' typed in POS mode", "291", "pos");
+        print_results(&r, 5);
+        // Should be empty since no POS code starts with "291" — but no crash.
+    }
+}
+
