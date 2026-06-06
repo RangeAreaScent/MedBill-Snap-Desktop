@@ -5,7 +5,14 @@ import {
   getModifierDetail,
   getPosDetail,
 } from "./api";
-import type { Collection, CollectionItem, NoteMap } from "./types";
+import type {
+  CcMccEntry,
+  Collection,
+  CollectionItem,
+  ImpactCandidate,
+  ImpactResult,
+  NoteMap,
+} from "./types";
 
 interface ExportEntry {
   /** "POS" / "MOD" / "DRG" — shown as a chip in the PDF header line and
@@ -171,5 +178,45 @@ export async function exportCollectionPDF(
 
   const entries = await buildEntries(c, notes);
   await invoke("export_pdf", { path, title: c.name, entries });
+  return true;
+}
+
+/** Polish 5 — CC/MCC Impact Calculator PDF export.
+ *
+ * Builds the Rust-side `CalculationInput` directly from the live
+ * `ImpactResult` the calculator already has (no DB re-fetch — the
+ * frontend is the source of truth so the PDF matches what the user
+ * just saw on screen). Secondaries can include a description (from
+ * the classifyIcd call); we forward whatever the calculator captured. */
+export interface CalculationExportInput {
+  principalIcd: string;
+  secondaries: CcMccEntry[];
+  highestLevel: string;
+  routed: ImpactCandidate | null;
+  baseline: ImpactCandidate | null;
+  weightDelta: number | null;
+  candidates: ImpactCandidate[];
+}
+
+export async function exportCalculationPDF(
+  impact: ImpactResult,
+): Promise<boolean> {
+  const principal = impact.principalIcd || "calculator";
+  const path = await save({
+    defaultPath: `ccmcc-${safeFileBase(principal, "calculator")}.pdf`,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+  if (!path) return false;
+
+  const input: CalculationExportInput = {
+    principalIcd: impact.principalIcd,
+    secondaries: impact.secondaryClassifications,
+    highestLevel: impact.highestSecondaryLevel,
+    routed: impact.routedDrg,
+    baseline: impact.baselineDrg,
+    weightDelta: impact.weightDelta,
+    candidates: impact.candidateDrgs,
+  };
+  await invoke("export_calculation_pdf", { path, input });
   return true;
 }

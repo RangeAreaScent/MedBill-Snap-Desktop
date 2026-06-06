@@ -271,6 +271,44 @@ impl Layout {
     }
 }
 
+/// Polish 5 — CC/MCC Impact Calculator PDF export input.
+///
+/// Mirrors what the frontend Calculator already has on screen: principal
+/// ICD + classified secondaries + the routing result. No DB re-fetch in
+/// the Rust side — the React side is the source of truth so the PDF
+/// matches what the user just saw.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalculationInput {
+    pub principal_icd: String,
+    pub secondaries: Vec<SecondaryRow>,
+    /// "MCC" / "CC" / "none" — the aggregate level driving the routing.
+    pub highest_level: String,
+    pub routed: Option<CandidateRow>,
+    pub baseline: Option<CandidateRow>,
+    pub weight_delta: Option<f64>,
+    pub candidates: Vec<CandidateRow>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecondaryRow {
+    pub icd_code: String,
+    /// "mcc" / "cc" / "none" — the chip level shown in the UI.
+    pub level: String,
+    pub description: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CandidateRow {
+    pub number: String,
+    pub name: String,
+    pub severity: Option<String>,
+    pub relative_weight: Option<f64>,
+    pub mdc_code: Option<String>,
+}
+
 pub fn export(path: &str, title: &str, entries: &[ExportEntry]) -> Result<(), String> {
     let mut doc = PdfDocument::new(title);
     let regular = ParsedFont::from_bytes(NANUM_REGULAR, 0, &mut Vec::new())
@@ -317,6 +355,206 @@ pub fn export(path: &str, title: &str, entries: &[ExportEntry]) -> Result<(), St
         }
         layout.gap(4.5);
     }
+
+    let pages = layout.finish();
+    let bytes = doc
+        .with_pages(pages)
+        .save(&PdfSaveOptions::default(), &mut Vec::new());
+    std::fs::write(path, bytes).map_err(|e| format!("cannot write PDF: {e}"))?;
+    Ok(())
+}
+
+/// Polish 5 — CC/MCC Impact Calculator → A4 PDF.
+///
+/// Layout (top → bottom):
+///   1. Centered title + dataset attribution
+///   2. PRINCIPAL DIAGNOSIS — ICD code
+///   3. SECONDARY DIAGNOSES — table-like list with [MCC/CC/—] chip text
+///   4. Aggregate-level summary + routed DRG
+///   5. WEIGHT IMPACT — baseline / routed / delta
+///   6. CANDIDATE DRGs — full table
+///   7. Disclaimer footer
+pub fn export_calculation(path: &str, input: &CalculationInput) -> Result<(), String> {
+    let mut doc = PdfDocument::new("CC/MCC Impact Calculator");
+    let regular = ParsedFont::from_bytes(NANUM_REGULAR, 0, &mut Vec::new())
+        .ok_or_else(|| "failed to parse embedded font".to_string())?;
+    let bold = ParsedFont::from_bytes(NANUM_BOLD, 0, &mut Vec::new())
+        .ok_or_else(|| "failed to parse embedded bold font".to_string())?;
+    let regular_id = doc.add_font(&regular);
+    let bold_id = doc.add_font(&bold);
+
+    let mut layout = Layout::new(regular_id, bold_id);
+
+    // 1. Header
+    layout.text_centered("CC/MCC Impact Calculator", 18.0, true);
+    layout.gap(1.5);
+    layout.text_centered("MedBill Snap (CMS FY 2026)", 9.0, false);
+    layout.gap(8.0);
+
+    // 2. Principal diagnosis
+    layout.text("PRINCIPAL DIAGNOSIS", 8.5, 0.0, true);
+    layout.gap(1.5);
+    layout.text(&format!("ICD-10:  {}", input.principal_icd), 12.0, 0.0, false);
+    layout.gap(6.0);
+
+    // 3. Secondaries
+    layout.text(
+        &format!("SECONDARY DIAGNOSES ({})", input.secondaries.len()),
+        8.5,
+        0.0,
+        true,
+    );
+    layout.gap(1.5);
+    if input.secondaries.is_empty() {
+        layout.text("(none — baseline = principal alone)", 10.0, 4.0, false);
+    } else {
+        for s in &input.secondaries {
+            let chip = match s.level.as_str() {
+                "mcc" => "MCC",
+                "cc" => "CC",
+                _ => "—",
+            };
+            let desc = s.description.as_deref().unwrap_or("(unknown)");
+            let line = format!("{:<10} [{:<3}]  {}", s.icd_code, chip, desc);
+            layout.text(&line, 10.0, 4.0, false);
+        }
+    }
+    layout.gap(6.0);
+    layout.hr();
+    layout.gap(2.0);
+
+    // 4. Aggregate + routed
+    let highest_label = match input.highest_level.as_str() {
+        "MCC" | "mcc" => "MCC",
+        "CC" | "cc" => "CC",
+        _ => "none",
+    };
+    layout.text(
+        &format!("Highest secondary severity:  {}", highest_label),
+        11.0,
+        0.0,
+        true,
+    );
+    layout.gap(1.0);
+    if let Some(r) = &input.routed {
+        let sev = r.severity.as_deref().unwrap_or("");
+        let header = if sev.is_empty() {
+            format!("Routed → DRG {}  {}", r.number, r.name)
+        } else {
+            format!("Routed → DRG {}  ({})", r.number, sev)
+        };
+        layout.text(&header, 13.0, 0.0, true);
+        layout.text(&r.name, 10.0, 0.0, false);
+    } else {
+        layout.text(
+            "Routed → (none — principal not in routing table)",
+            11.0,
+            0.0,
+            false,
+        );
+    }
+    layout.gap(6.0);
+    layout.hr();
+    layout.gap(2.0);
+
+    // 5. Weight impact
+    layout.text("WEIGHT IMPACT", 8.5, 0.0, true);
+    layout.gap(1.5);
+    match (&input.baseline, &input.routed) {
+        (Some(b), Some(r)) => {
+            let bw = b
+                .relative_weight
+                .map(|w| format!("Wt {:.4}", w))
+                .unwrap_or_else(|| "Wt —".into());
+            let rw = r
+                .relative_weight
+                .map(|w| format!("Wt {:.4}", w))
+                .unwrap_or_else(|| "Wt —".into());
+            layout.text(
+                &format!("Baseline   DRG {:<4}  {}", b.number, bw),
+                10.0,
+                4.0,
+                false,
+            );
+            layout.text(
+                &format!("Routed     DRG {:<4}  {}", r.number, rw),
+                10.0,
+                4.0,
+                false,
+            );
+            if let Some(d) = input.weight_delta {
+                let sign = if d >= 0.0 { "+" } else { "" };
+                layout.text(
+                    &format!("                          Δ  {}{:.4}", sign, d),
+                    10.5,
+                    4.0,
+                    true,
+                );
+            }
+        }
+        _ => {
+            layout.text(
+                "(no baseline/routed pair — weight delta unavailable)",
+                10.0,
+                4.0,
+                false,
+            );
+        }
+    }
+    layout.gap(6.0);
+    layout.hr();
+    layout.gap(2.0);
+
+    // 6. Candidate DRGs
+    layout.text(
+        &format!("CANDIDATE DRGs ({})", input.candidates.len()),
+        8.5,
+        0.0,
+        true,
+    );
+    layout.gap(1.5);
+    if input.candidates.is_empty() {
+        layout.text(
+            "(no candidates — this ICD has no entry in the principal-dx routing table)",
+            10.0,
+            4.0,
+            false,
+        );
+    } else {
+        for c in &input.candidates {
+            let sev = match c.severity.as_deref() {
+                Some("With MCC") => "MCC",
+                Some("With CC") => "CC",
+                Some("Without CC/MCC") => "w/o",
+                _ => "—",
+            };
+            let wt = c
+                .relative_weight
+                .map(|w| format!("Wt {:.4}", w))
+                .unwrap_or_else(|| "Wt —".into());
+            let mdc = c
+                .mdc_code
+                .as_deref()
+                .map(|m| format!(" · MDC {}", m))
+                .unwrap_or_default();
+            let line = format!(
+                "DRG {:<4}  [{:<3}]  {:<50.50}  {}{}",
+                c.number, sev, c.name, wt, mdc,
+            );
+            layout.text(&line, 9.5, 4.0, false);
+        }
+    }
+    layout.gap(8.0);
+    layout.hr();
+    layout.gap(2.0);
+
+    // 7. Disclaimer
+    layout.text(
+        "Reference only — not the official CMS Grouper. Routing assumes the principal-diagnosis routing table; procedure-driven DRGs (transplants, ECMO) are out of scope.",
+        8.0,
+        0.0,
+        false,
+    );
 
     let pages = layout.finish();
     let bytes = doc

@@ -2617,3 +2617,13 @@ button {
 }
 .modal__title { font-size: 15px; font-weight: 700; margin: 0; }
 .modal__body { padding: 16px 20px 20px; overflow-y: auto; }
+
+/* Polish — Calculator head: title + Export PDF button on the same row. */
+.calc-head__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.calc-head__top h2 { margin: 0; }

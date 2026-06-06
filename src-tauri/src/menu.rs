@@ -95,6 +95,13 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             true,
             Some("CmdOrCtrl+E"),
         )?)
+        .item(&MenuItem::with_id(
+            app,
+            "file.export_calculation",
+            "Export Calculator Result as PDF…",
+            true,
+            Some("CmdOrCtrl+Shift+E"),
+        )?)
         .build()?;
 
     let edit_submenu = SubmenuBuilder::new(app, "Edit")

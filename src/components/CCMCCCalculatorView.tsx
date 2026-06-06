@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { classifyIcd, computeImpact } from "../api";
+import { exportCalculationPDF } from "../export";
 import type {
   CcMccEntry,
   CcMccLevel,
   ImpactResult,
   LibraryItem,
 } from "../types";
+import { showToast } from "./Toaster";
 
 interface Props {
   onOpenDrg?: (item: LibraryItem) => void;
@@ -28,6 +30,38 @@ export function CCMCCCalculatorView({ onOpenDrg }: Props) {
   const [impact, setImpact] = useState<ImpactResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [exporting, setExporting] = useState(false);
+
+  // ⌘⇧E → export calculation PDF (mirrors File menu item).
+  useEffect(() => {
+    async function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod || !e.shiftKey || e.key.toLowerCase() !== "e") return;
+      if (!impact || impact.candidateDrgs.length === 0) return;
+      e.preventDefault();
+      doExport();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [impact]);
+
+  async function doExport() {
+    if (!impact || impact.candidateDrgs.length === 0) {
+      showToast("Nothing to export — set a principal ICD with routings first");
+      return;
+    }
+    setExporting(true);
+    try {
+      const ok = await exportCalculationPDF(impact);
+      if (ok) showToast("PDF saved");
+    } catch (e) {
+      showToast(`Export failed: ${e}`);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   // Recompute impact whenever the principal or secondary list changes.
   useEffect(() => {
@@ -79,7 +113,19 @@ export function CCMCCCalculatorView({ onOpenDrg }: Props) {
   return (
     <div className="calc-view">
       <header className="calc-head">
-        <h2>CC/MCC Impact Calculator</h2>
+        <div className="calc-head__top">
+          <h2>CC/MCC Impact Calculator</h2>
+          <button
+            className="btn btn--primary"
+            onClick={doExport}
+            disabled={
+              exporting || !impact || impact.candidateDrgs.length === 0
+            }
+            title="Export the routing result as a PDF (⌘⇧E)"
+          >
+            {exporting ? "Exporting…" : "Export PDF"}
+          </button>
+        </div>
         <p className="calc-sub">
           Enter a principal ICD-10 + secondary diagnoses to see the routed
           DRG and the relative-weight delta vs the without-CC/MCC baseline.

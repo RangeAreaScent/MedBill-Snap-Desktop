@@ -159,6 +159,15 @@ fn export_pdf(
     pdf::export(&path, &title, &entries)
 }
 
+/// Polish 5 — CC/MCC Impact Calculator PDF.
+#[tauri::command]
+fn export_calculation_pdf(
+    path: String,
+    input: pdf::CalculationInput,
+) -> Result<(), String> {
+    pdf::export_calculation(&path, &input)
+}
+
 // =====================================================================
 // License commands
 // =====================================================================
@@ -241,6 +250,7 @@ pub fn run() {
             store_write,
             write_text_file,
             export_pdf,
+            export_calculation_pdf,
             license_status,
             license_activate,
             license_validate,

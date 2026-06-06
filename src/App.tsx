@@ -198,6 +198,20 @@ function AppShell() {
         new KeyboardEvent("keydown", { key: "e", metaKey: true }),
       );
     });
+    on("file.export_calculation", () => {
+      // Jump to Calculator (if not already), then dispatch ⌘⇧E which
+      // the Calculator's own keydown listener handles.
+      setTab("calculator");
+      setTimeout(() => {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "e",
+            metaKey: true,
+            shiftKey: true,
+          }),
+        );
+      }, 0);
+    });
 
     on("edit.copy_code", () => {
       if (!selected) return;
@@ -395,6 +409,7 @@ function EmptyDetail() {
         <li><kbd>{mod}1</kbd>–<kbd>{mod}5</kbd> Jump between tabs</li>
         <li><kbd>{mod}C</kbd> Copy selected code</li>
         <li><kbd>{mod}D</kbd> Toggle favorite</li>
+        <li><kbd>{mod}E</kbd> Export open collection · <kbd>{mod}⇧E</kbd> Export Calculator PDF</li>
         <li><kbd>{mod}{isMac ? "," : "/"}</kbd> Settings</li>
       </ul>
     </div>
