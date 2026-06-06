@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import {
   FONT_FAMILIES,
   FONT_LABELS,
@@ -805,7 +806,14 @@ function PremiumSection({
   }
 
   async function deactivate() {
-    if (!window.confirm("Deactivate premium on this computer?")) return;
+    // Tauri 2 webview silently ignores window.confirm — use the dialog
+    // plugin's native ask() instead. Without this, the click was a
+    // no-op (confirm returned false unconditionally).
+    const ok = await ask(
+      "Deactivate premium on this computer? Your license slot will be released so you can activate it on another machine.",
+      { title: "Deactivate premium", kind: "warning" },
+    );
+    if (!ok) return;
     setBusy(true);
     setError(null);
     try {
