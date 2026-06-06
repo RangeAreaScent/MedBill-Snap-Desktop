@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listDrgsByMdc, listMdcs } from "../api";
+import { useListKeyNav } from "../hooks/useListKeyNav";
 import type { LibraryItem, MdcCategory, SearchResult } from "../types";
 import { toLibraryItem } from "../types";
 import { CodeRow } from "./CodeRow";
@@ -41,6 +42,13 @@ export function DRGBrowserView({ selected, onSelect }: Props) {
       }
     }
   }
+
+  // Phase A — ↑↓ navigation across the currently-open MDC's DRG list.
+  const navItems = useMemo<LibraryItem[]>(
+    () => (openMdc ? (mdcDrgs[openMdc] ?? []).map(toLibraryItem) : []),
+    [openMdc, mdcDrgs],
+  );
+  useListKeyNav(navItems, selected?.key ?? null, onSelect);
 
   return (
     <div className="list-pane">

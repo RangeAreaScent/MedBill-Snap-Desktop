@@ -1841,3 +1841,89 @@ button {
 /* --- Status / loading --- */
 .status { padding: 10px 16px; color: var(--text-dim, #6b6e74); font-size: 13px; }
 .status.error { color: #c33; }
+
+/* =================================================================== */
+/* Phase A — keyboard nav, focus ring, toaster, EmptyDetail              */
+/* =================================================================== */
+
+/* Focus ring on the selected row — mirrors the Tariff reference's
+   "inset box-shadow on top of theme accent" pattern, with theme-aware
+   accent so it adapts across the 7 themes. */
+.code-row--selected,
+.code-row--selected:hover {
+  background: var(--selected, var(--accent-soft, #e2eafc));
+  box-shadow: inset 0 0 0 1.5px var(--accent, #2f6df0);
+}
+.code-row:focus { outline: none; }
+.code-row:focus-visible:not(.code-row--selected) {
+  box-shadow: inset 0 0 0 1.5px var(--accent, #2f6df0);
+}
+
+/* Tab button keyboard-shortcut chip — shows in title attribute only.
+   Active state already has accent treatment via Phase B. */
+
+/* Toaster — fire-and-forget message surface centred at the bottom. */
+.toaster {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 9px 16px;
+  background: var(--text, #1c1d21);
+  color: var(--pane, #ffffff);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 9500;
+  pointer-events: none;
+  animation: toaster-in 160ms ease-out;
+}
+@keyframes toaster-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* EmptyDetail — replaces the bare "Select an item…" with a discoverable
+   shortcut card. The user immediately knows the keyboard is the
+   first-class UI. */
+.detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 32px;
+  color: var(--text-dim, #6b6f76);
+  text-align: center;
+}
+.detail-empty__title {
+  font-size: 15px;
+  font-weight: 500;
+  margin: 0 0 18px;
+  color: var(--text, #1c1d21);
+}
+.detail-empty__hints {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.detail-empty__hints kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 2px 6px;
+  margin: 0 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  background: var(--pane-2, #fafbfc);
+  border: 1px solid var(--border, #e3e5e9);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--text, #1c1d21);
+}

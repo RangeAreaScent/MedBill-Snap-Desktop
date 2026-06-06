@@ -1,3 +1,4 @@
+import { useListKeyNav } from "../hooks/useListKeyNav";
 import { useAppData } from "../state";
 import type { Favorite, LibraryItem, SearchResult } from "../types";
 import { CodeRow } from "./CodeRow";
@@ -34,6 +35,10 @@ function favoriteToResult(f: Favorite): SearchResult {
 
 export function FavoritesView({ selected, onSelect }: Props) {
   const { favorites, isFavorite, toggleFavorite } = useAppData();
+
+  // Phase A — ↑↓ nav. Favorite already has `key` so it satisfies the
+  // hook's generic constraint directly.
+  useListKeyNav(favorites, selected?.key ?? null, onSelect);
 
   return (
     <div className="list-pane">

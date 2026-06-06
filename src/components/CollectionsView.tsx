@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { exportCollectionCSV, exportCollectionPDF } from "../export";
+import { useListKeyNav } from "../hooks/useListKeyNav";
 import { useAppData } from "../state";
 import type { CollectionItem, LibraryItem, SearchResult } from "../types";
 import { CodeRow } from "./CodeRow";
@@ -54,6 +56,16 @@ export function CollectionsView({ selected, onSelect }: Props) {
   const renamingCollection = renameTarget
     ? collections.find((c) => c.id === renameTarget) ?? null
     : null;
+
+  // Phase A — ↑↓ navigation across the currently-open collection's items.
+  const navItems = useMemo<LibraryItem[]>(
+    () =>
+      openId
+        ? collections.find((c) => c.id === openId)?.items ?? []
+        : [],
+    [openId, collections],
+  );
+  useListKeyNav(navItems, selected?.key ?? null, onSelect);
 
   return (
     <div className="list-pane">
@@ -137,11 +149,16 @@ export function CollectionsView({ selected, onSelect }: Props) {
                     </button>
                     <button
                       className="btn btn--small btn--danger"
-                      onClick={() => {
-                        if (confirm(`Delete collection "${c.name}"?`)) {
-                          deleteCollection(c.id);
-                          if (openId === c.id) setOpenId(null);
-                        }
+                      onClick={async () => {
+                        // Tauri 2 webview silently ignores window.confirm —
+                        // use the dialog plugin's native ask() instead.
+                        const ok = await ask(
+                          `Delete collection "${c.name}"? This removes the collection but not the items inside.`,
+                          { title: "Delete collection", kind: "warning" },
+                        );
+                        if (!ok) return;
+                        deleteCollection(c.id);
+                        if (openId === c.id) setOpenId(null);
                       }}
                     >
                       Delete

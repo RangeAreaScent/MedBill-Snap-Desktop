@@ -28,6 +28,7 @@ export function CodeRow({
   return (
     <li
       className={`code-row code-row--${item.kind}${selected ? " code-row--selected" : ""}`}
+      data-key={item.key}
       onClick={() => onClick?.(item)}
     >
       <span className={`code-chip code-chip--${item.kind}`}>

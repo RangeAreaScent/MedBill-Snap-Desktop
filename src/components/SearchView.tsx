@@ -5,6 +5,7 @@ import {
   searchModifiers,
   searchPos,
 } from "../api";
+import { useListKeyNav } from "../hooks/useListKeyNav";
 import { useAppData } from "../state";
 import type { LibraryItem, SearchMode, SearchResult } from "../types";
 import { toLibraryItem } from "../types";
@@ -95,6 +96,15 @@ export function SearchView({ selected, onSelect }: Props) {
   }, [query, mode]);
 
   const trimmed = query.trim();
+
+  // Phase A — wire ↑↓ navigation. Results are SearchResult (tagged union),
+  // but the hook needs items keyed by `LibraryItem.key`. Map once per
+  // results change.
+  const navItems = useMemo<LibraryItem[]>(
+    () => results.map(toLibraryItem),
+    [results],
+  );
+  useListKeyNav(navItems, selected?.key ?? null, onSelect);
 
   return (
     <div className="list-pane">

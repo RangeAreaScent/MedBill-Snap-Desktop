@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./styles.css";
 import { AppDataProvider, useAppData } from "./state";
 import { SettingsProvider } from "./settings";
@@ -13,16 +13,23 @@ import { SettingsView } from "./components/SettingsView";
 import { AddToCollectionModal } from "./components/AddToCollectionModal";
 import { CollectionFormModal } from "./components/CollectionFormModal";
 import { PremiumPromptModal } from "./components/PremiumPromptModal";
+import { showToast, Toaster } from "./components/Toaster";
 
-type Tab = "search" | "calculator" | "drg" | "favorites" | "collections" | "settings";
+type Tab =
+  | "search"
+  | "calculator"
+  | "drg"
+  | "favorites"
+  | "collections"
+  | "settings";
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: "search", label: "Search", icon: "⌕" },
-  { id: "calculator", label: "Calculator", icon: "∑" },
-  { id: "drg", label: "DRG Browser", icon: "▦" },
-  { id: "favorites", label: "Favorites", icon: "★" },
-  { id: "collections", label: "Collections", icon: "▤" },
-  { id: "settings", label: "Settings", icon: "⚙" },
+const TABS: { id: Tab; label: string; icon: string; shortcut?: string }[] = [
+  { id: "search", label: "Search", icon: "⌕", shortcut: "1" },
+  { id: "calculator", label: "Calculator", icon: "∑", shortcut: "2" },
+  { id: "drg", label: "DRG Browser", icon: "▦", shortcut: "3" },
+  { id: "favorites", label: "Favorites", icon: "★", shortcut: "4" },
+  { id: "collections", label: "Collections", icon: "🗂", shortcut: "5" },
+  { id: "settings", label: "Settings", icon: "⚙", shortcut: "," },
 ];
 
 const LIBRARY_TABS: Tab[] = ["search", "drg", "favorites", "collections"];
@@ -31,22 +38,115 @@ export default function App() {
   return (
     <SettingsProvider>
       <AppDataProvider>
-        <Shell />
+        <AppShell />
       </AppDataProvider>
     </SettingsProvider>
   );
 }
 
-function Shell() {
+function AppShell() {
   const [tab, setTab] = useState<Tab>("search");
   const [selected, setSelected] = useState<LibraryItem | null>(null);
   const [addToCollectionFor, setAddToCollectionFor] = useState<LibraryItem | null>(null);
   const [showNewCollection, setShowNewCollection] = useState(false);
-  const { createCollection, premiumPrompt, clearPremiumPrompt } = useAppData();
+  const {
+    createCollection,
+    premiumPrompt,
+    clearPremiumPrompt,
+    isFavorite,
+    toggleFavorite,
+    removeFavorite,
+  } = useAppData();
 
-  function openItem(item: LibraryItem) {
+  const openItem = useCallback((item: LibraryItem) => {
     setSelected(item);
-  }
+  }, []);
+
+  // Phase A — global desktop shortcuts (SNAP_DESKTOP_IMPROVEMENT_PLAN §5).
+  // Single source of truth so behavior is consistent across views and the
+  // native menu (Phase D) can reuse the same actions.
+  useEffect(() => {
+    async function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const inEditable = tag === "input" || tag === "textarea";
+      const key = e.key.toLowerCase();
+
+      // ⌘F → focus search input
+      if (key === "f") {
+        e.preventDefault();
+        setTab("search");
+        setTimeout(() => {
+          const input = document.querySelector(
+            ".search-bar__input",
+          ) as HTMLInputElement | null;
+          input?.focus();
+        }, 0);
+        return;
+      }
+      // ⌘1~5 → sidebar tab jump (matches the TABS table order)
+      if (e.key === "1") { e.preventDefault(); setTab("search"); return; }
+      if (e.key === "2") { e.preventDefault(); setTab("calculator"); return; }
+      if (e.key === "3") { e.preventDefault(); setTab("drg"); return; }
+      if (e.key === "4") { e.preventDefault(); setTab("favorites"); return; }
+      if (e.key === "5") { e.preventDefault(); setTab("collections"); return; }
+      // ⌘, → Settings (macOS convention)
+      if (e.key === ",") { e.preventDefault(); setTab("settings"); return; }
+
+      // The rest need a selected item; let the browser's native ⌘C / ⌘D
+      // through when the user is typing into an input.
+      if (inEditable) return;
+      if (!selected) return;
+
+      // ⌘C → copy selected display code to clipboard
+      if (key === "c") {
+        e.preventDefault();
+        try {
+          await navigator.clipboard.writeText(selected.displayCode);
+          showToast(`Copied ${selected.displayCode}`);
+        } catch {
+          showToast("Copy failed");
+        }
+        return;
+      }
+      // ⌘D → favorite toggle. MedBill's `LibraryItem` already carries
+      // everything needed (key/kind/displayCode/name/description), so —
+      // unlike the Tariff reference — no async detail fetch is needed.
+      if (key === "d") {
+        e.preventDefault();
+        if (isFavorite(selected.key)) {
+          removeFavorite(selected.key);
+          showToast("Removed from favorites");
+        } else {
+          toggleFavorite(selected);
+          showToast("Added to favorites");
+        }
+        return;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected, isFavorite, toggleFavorite, removeFavorite]);
+
+  // Esc priority — close palette > narrow detail > return focus to search input.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (tab === "search") {
+        const active = document.activeElement as HTMLElement | null;
+        const t = active?.tagName?.toLowerCase();
+        if (t === "input" || t === "textarea") return;
+        const input = document.querySelector(
+          ".search-bar__input",
+        ) as HTMLInputElement | null;
+        input?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab]);
 
   return (
     <div className="shell">
@@ -56,6 +156,7 @@ function Shell() {
             key={t.id}
             className={`tab-btn${tab === t.id ? " tab-btn--on" : ""}`}
             onClick={() => setTab(t.id)}
+            title={t.shortcut ? `${t.label}  ⌘${t.shortcut}` : t.label}
             aria-current={tab === t.id ? "page" : undefined}
           >
             <span className="tab-icon">{t.icon}</span>
@@ -88,9 +189,7 @@ function Shell() {
                   onAddToCollection={() => setAddToCollectionFor(selected)}
                 />
               ) : (
-                <div className="detail-empty">
-                  <p>Select an item to see details here.</p>
-                </div>
+                <EmptyDetail />
               )}
             </div>
           </>
@@ -133,6 +232,31 @@ function Shell() {
           }}
         />
       )}
+
+      <Toaster />
+    </div>
+  );
+}
+
+/** Phase A — empty-detail panel with discoverable shortcut hints.
+ * Mirrors the Tariff reference's EmptyDetail pattern. Phase C (⌘K) and
+ * Phase D (menu) will add additional rows. */
+function EmptyDetail() {
+  const isMac =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+  const mod = isMac ? "⌘" : "Ctrl";
+  return (
+    <div className="detail-empty">
+      <p className="detail-empty__title">Select an item to see details</p>
+      <ul className="detail-empty__hints">
+        <li><kbd>↑</kbd> <kbd>↓</kbd> Navigate rows</li>
+        <li><kbd>{mod}F</kbd> Focus search</li>
+        <li><kbd>{mod}1</kbd>–<kbd>{mod}5</kbd> Jump between tabs</li>
+        <li><kbd>{mod}C</kbd> Copy selected code</li>
+        <li><kbd>{mod}D</kbd> Toggle favorite</li>
+        <li><kbd>{mod}{isMac ? "," : "/"}</kbd> Settings</li>
+      </ul>
     </div>
   );
 }
