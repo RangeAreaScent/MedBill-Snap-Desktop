@@ -1492,8 +1492,12 @@ button {
   flex-direction: column;
 }
 .left-pane {
-  width: 42%;
+  /* Phase B — list-pane width is driven by the Splitter component, which
+     sets --list-width on <html>. CSS-var fallback keeps the layout sane
+     before the Splitter component mounts. */
+  width: var(--list-width, 42%);
   min-width: 320px;
+  flex-shrink: 0;
   border-right: 1px solid var(--border, #e3e4e7);
   display: flex;
   flex-direction: column;
@@ -2155,4 +2159,67 @@ button {
   border: 1px solid var(--border, #e3e5e9);
   border-radius: 4px;
   background: var(--pane-2, #fafbfc);
+}
+
+/* =================================================================== */
+/* Phase B — Splitter + responsive narrow window                        */
+/* =================================================================== */
+
+/* Splitter handle — 6px-wide column on the right edge of .left-pane.
+   Negative margin pulls it over the border so the hit-target straddles
+   the visible line. Hover/dragging tints with theme accent. */
+.splitter {
+  width: 6px;
+  margin-left: -6px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+  background: transparent;
+  transition: background 0.12s;
+}
+.splitter:hover,
+.splitter--dragging {
+  background: var(--accent, #2f6df0);
+  opacity: 0.55;
+}
+
+/* Narrow window — list takes full width; detail hides by default and
+   only renders as an overlay when narrowDetailOpen is true. */
+.main-area--narrow .left-pane {
+  width: 100%;
+  border-right: none;
+}
+.main-area--narrow .right-pane {
+  display: none;
+}
+.main-area--narrow.main-area--detail-overlay .left-pane {
+  display: none;
+}
+.main-area--narrow.main-area--detail-overlay .right-pane {
+  display: block;
+  width: 100%;
+  flex: 1;
+}
+
+/* Back button — only renders in narrow overlay mode (CodeDetailView
+   accepts onClose prop). Single floating chip at the top-left of the
+   detail-scroll. */
+.detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px 5px 8px;
+  margin: 0 0 12px;
+  background: var(--pane-2, #fafbfc);
+  border: 1px solid var(--border, #e3e5e9);
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim, #6b6f76);
+  cursor: pointer;
+}
+.detail-back:hover {
+  background: var(--hover, #f2f3f5);
+  color: var(--text, #1c1d21);
 }

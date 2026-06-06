@@ -17,6 +17,9 @@ import type {
 interface Props {
   item: LibraryItem;
   onAddToCollection?: () => void;
+  /** Phase B narrow-window: when set, the detail view is acting as an
+   *  overlay over the list pane; show a Back button to dismiss it. */
+  onClose?: () => void;
 }
 
 type Loaded =
@@ -24,7 +27,7 @@ type Loaded =
   | { kind: "modifier"; data: ModifierDetail }
   | { kind: "drg"; data: DrgDetail };
 
-export function CodeDetailView({ item, onAddToCollection }: Props) {
+export function CodeDetailView({ item, onAddToCollection, onClose }: Props) {
   const { isFavorite, toggleFavorite, notes, setNote, deleteNote } =
     useAppData();
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -70,6 +73,11 @@ export function CodeDetailView({ item, onAddToCollection }: Props) {
 
   return (
     <div className="detail-view">
+      {onClose && (
+        <button className="detail-back" onClick={onClose}>
+          ‹ Back
+        </button>
+      )}
       <header className="detail-head">
         <span className={`code-chip code-chip--${item.kind}`}>
           {item.kind.toUpperCase()}

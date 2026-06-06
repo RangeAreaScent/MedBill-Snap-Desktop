@@ -15,6 +15,7 @@ import { AddToCollectionModal } from "./components/AddToCollectionModal";
 import { CollectionFormModal } from "./components/CollectionFormModal";
 import { CommandPalette } from "./components/CommandPalette";
 import { PremiumPromptModal } from "./components/PremiumPromptModal";
+import { Splitter } from "./components/Splitter";
 import { StatusBar } from "./components/StatusBar";
 import { showToast, Toaster } from "./components/Toaster";
 
@@ -37,6 +38,26 @@ const TABS: { id: Tab; label: string; icon: string; shortcut?: string }[] = [
 
 const LIBRARY_TABS: Tab[] = ["search", "drg", "favorites", "collections"];
 
+/** Phase B: responsive breakpoint. Below this, the list-pane goes
+ *  full-width and the detail-pane overlays it. 900px lets standard
+ *  13-inch laptops keep the split; only intentional narrow windows
+ *  trip the overlay. */
+const NARROW_PX = 900;
+
+function useIsNarrow(): boolean {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < NARROW_PX,
+  );
+  useEffect(() => {
+    function onResize() {
+      setNarrow(window.innerWidth < NARROW_PX);
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return narrow;
+}
+
 export default function App() {
   return (
     <SettingsProvider>
@@ -53,6 +74,8 @@ function AppShell() {
   const [addToCollectionFor, setAddToCollectionFor] = useState<LibraryItem | null>(null);
   const [showNewCollection, setShowNewCollection] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const isNarrow = useIsNarrow();
+  const [narrowDetailOpen, setNarrowDetailOpen] = useState(false);
   const {
     createCollection,
     premiumPrompt,
@@ -62,9 +85,17 @@ function AppShell() {
     removeFavorite,
   } = useAppData();
 
+  // Phase B narrow-window: row selection opens the detail overlay; Esc /
+  // tab change closes it.
   const openItem = useCallback((item: LibraryItem) => {
     setSelected(item);
+    setNarrowDetailOpen(true);
   }, []);
+
+  // Close the narrow overlay whenever the user changes tabs.
+  useEffect(() => {
+    setNarrowDetailOpen(false);
+  }, [tab]);
 
   // Phase A — global desktop shortcuts (SNAP_DESKTOP_IMPROVEMENT_PLAN §5).
   // Single source of truth so behavior is consistent across views and the
@@ -207,13 +238,20 @@ function AppShell() {
     };
   }, [selected]);
 
-  // Esc priority — defer to cmdk if palette is open, otherwise return
-  // focus to the search input on the Search tab.
+  // Esc priority:
+  //   1. defer to cmdk if palette is open
+  //   2. close narrow-window detail overlay if it's up
+  //   3. return focus to the search input on the Search tab
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       // Phase C — cmdk handles its own Esc; don't fight it.
       if (paletteOpen) return;
+      // Phase B — close narrow-window detail overlay if it's up.
+      if (isNarrow && narrowDetailOpen) {
+        setNarrowDetailOpen(false);
+        return;
+      }
       if (tab === "search") {
         const active = document.activeElement as HTMLElement | null;
         const t = active?.tagName?.toLowerCase();
@@ -226,7 +264,7 @@ function AppShell() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tab, paletteOpen]);
+  }, [tab, paletteOpen, isNarrow, narrowDetailOpen]);
 
   return (
     <div className="app">
@@ -246,7 +284,11 @@ function AppShell() {
         ))}
       </nav>
 
-      <main className={`main-area main-area--${tab}`}>
+      <main
+        className={`main-area main-area--${tab}${
+          isNarrow ? " main-area--narrow" : ""
+        }${isNarrow && narrowDetailOpen ? " main-area--detail-overlay" : ""}`}
+      >
         {LIBRARY_TABS.includes(tab) && (
           <>
             <div className="left-pane">
@@ -263,11 +305,15 @@ function AppShell() {
                 <CollectionsView selected={selected} onSelect={openItem} />
               )}
             </div>
+            {!isNarrow && <Splitter />}
             <div className="right-pane">
               {selected ? (
                 <CodeDetailView
                   item={selected}
                   onAddToCollection={() => setAddToCollectionFor(selected)}
+                  onClose={
+                    isNarrow ? () => setNarrowDetailOpen(false) : undefined
+                  }
                 />
               ) : (
                 <EmptyDetail />
