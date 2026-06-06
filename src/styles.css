@@ -2482,3 +2482,138 @@ button {
   color: var(--text, #1c1d21);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
+
+/* =================================================================== */
+/* Polish — Favorites multi-select bar + pickable rows + bulk modal     */
+/* =================================================================== */
+
+.multi-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--accent-soft, #e8f0fe);
+  border-bottom: 1px solid var(--border, #e3e5e9);
+  font-size: 12.5px;
+}
+.multi-bar__count {
+  color: var(--accent, #2f6df0);
+  font-weight: 600;
+}
+.multi-bar__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pane, #ffffff);
+  border: 1px solid var(--border, #e3e5e9);
+  border-radius: 7px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.1s, transform 0.06s;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--hover, #f2f3f5);
+}
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.icon-btn--danger:hover:not(:disabled) {
+  background: #fce8e6;
+}
+
+/* Pickable rows — checkbox + chip + code + name, no clickable navigation. */
+.code-row--pickable {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-faint, #ececef);
+  cursor: pointer;
+  font-size: 13px;
+}
+.code-row--pickable:hover {
+  background: var(--hover, #f2f3f5);
+}
+.code-row--picked {
+  background: var(--selected, var(--accent-soft, #e2eafc));
+}
+.code-row__check {
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent, #2f6df0);
+  cursor: pointer;
+}
+
+/* Bulk add-to-collection modal — wider list of collection rows. */
+.bulk-collection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bulk-collection-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--pane, #ffffff);
+  border: 1px solid var(--border, #e3e5e9);
+  border-radius: 8px;
+  font-size: 13.5px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+}
+.bulk-collection-row:hover {
+  background: var(--hover, #f2f3f5);
+  border-color: var(--accent, #2f6df0);
+}
+.bulk-collection-row__emoji { font-size: 17px; }
+.bulk-collection-row__name { flex: 1; font-weight: 500; }
+.bulk-collection-row__count {
+  color: var(--text-faint, #9aa0a8);
+  font-size: 11.5px;
+}
+
+/* Generic modal wrapper for the bulk add picker (matches InfoModal scope). */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 24px;
+}
+.modal {
+  background: var(--pane, #ffffff);
+  border: 1px solid var(--border, #e3e5e9);
+  border-radius: 12px;
+  width: min(480px, 92vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border, #e3e5e9);
+}
+.modal__title { font-size: 15px; font-weight: 700; margin: 0; }
+.modal__body { padding: 16px 20px 20px; overflow-y: auto; }
