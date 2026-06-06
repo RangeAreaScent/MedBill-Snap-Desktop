@@ -13,6 +13,7 @@ import { DRGBrowserView } from "./components/DRGBrowserView";
 import { SettingsView } from "./components/SettingsView";
 import { AddToCollectionModal } from "./components/AddToCollectionModal";
 import { CollectionFormModal } from "./components/CollectionFormModal";
+import { CommandPalette } from "./components/CommandPalette";
 import { PremiumPromptModal } from "./components/PremiumPromptModal";
 import { StatusBar } from "./components/StatusBar";
 import { showToast, Toaster } from "./components/Toaster";
@@ -51,6 +52,7 @@ function AppShell() {
   const [selected, setSelected] = useState<LibraryItem | null>(null);
   const [addToCollectionFor, setAddToCollectionFor] = useState<LibraryItem | null>(null);
   const [showNewCollection, setShowNewCollection] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const {
     createCollection,
     premiumPrompt,
@@ -76,6 +78,12 @@ function AppShell() {
       const inEditable = tag === "input" || tag === "textarea";
       const key = e.key.toLowerCase();
 
+      // ⌘K → command palette toggle (Phase C)
+      if (key === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+        return;
+      }
       // ⌘F → focus search input
       if (key === "f") {
         e.preventDefault();
@@ -151,11 +159,7 @@ function AppShell() {
         input?.focus();
       }, 0);
     });
-    on("file.command_palette", () => {
-      // Phase C — will toggle the palette once cmdk lands.
-      // For now, just bring focus to the search bar as the closest equivalent.
-      showToast("Command palette — landing in Phase C");
-    });
+    on("file.command_palette", () => setPaletteOpen(true));
     on("file.export_collection", () => {
       // Re-dispatch the keyboard event CollectionsView listens for. Goes
       // through the same ⌘E path the keyboard contract uses.
@@ -203,10 +207,13 @@ function AppShell() {
     };
   }, [selected]);
 
-  // Esc priority — close palette > narrow detail > return focus to search input.
+  // Esc priority — defer to cmdk if palette is open, otherwise return
+  // focus to the search input on the Search tab.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      // Phase C — cmdk handles its own Esc; don't fight it.
+      if (paletteOpen) return;
       if (tab === "search") {
         const active = document.activeElement as HTMLElement | null;
         const t = active?.tagName?.toLowerCase();
@@ -219,7 +226,7 @@ function AppShell() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tab]);
+  }, [tab, paletteOpen]);
 
   return (
     <div className="app">
@@ -310,6 +317,16 @@ function AppShell() {
       </div>{/* /.app__main */}
       <StatusBar />
       <Toaster />
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onJumpToItem={(item) => {
+          setTab("search");
+          setSelected(item);
+        }}
+        onJumpToTab={(t) => setTab(t)}
+      />
     </div>
   );
 }
@@ -327,6 +344,7 @@ function EmptyDetail() {
       <p className="detail-empty__title">Select an item to see details</p>
       <ul className="detail-empty__hints">
         <li><kbd>↑</kbd> <kbd>↓</kbd> Navigate rows</li>
+        <li><kbd>{mod}K</kbd> Command palette</li>
         <li><kbd>{mod}F</kbd> Focus search</li>
         <li><kbd>{mod}1</kbd>–<kbd>{mod}5</kbd> Jump between tabs</li>
         <li><kbd>{mod}C</kbd> Copy selected code</li>

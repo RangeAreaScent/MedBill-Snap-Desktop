@@ -2009,3 +2009,150 @@ button {
   border-radius: 3px;
   color: var(--text-dim, #6b6f76);
 }
+
+/* =================================================================== */
+/* Phase C — ⌘K Command Palette (cmdk)                                  */
+/* =================================================================== */
+
+/* cmdk renders the dialog as a portal at <body>, so positioning works
+   irrespective of where <CommandPalette> sits in the tree. Style by
+   class so theme tokens follow. */
+
+[cmdk-overlay] {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  z-index: 9000;
+  animation: cmdk-fade 120ms ease-out;
+}
+
+.cmdk-root {
+  position: fixed;
+  top: 18vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  max-width: 92vw;
+  max-height: 64vh;
+  background: var(--pane, #ffffff);
+  border: 1px solid var(--border, #e3e5e9);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 9100;
+  animation: cmdk-pop 140ms ease-out;
+}
+
+@keyframes cmdk-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes cmdk-pop {
+  from { opacity: 0; transform: translate(-50%, 4px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.cmdk-input {
+  width: 100%;
+  padding: 16px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border, #e3e5e9);
+  outline: none;
+  font-size: 15px;
+  color: var(--text, #1c1d21);
+  font-family: inherit;
+}
+
+.cmdk-input::placeholder {
+  color: var(--text-faint, #9aa0a8);
+}
+
+.cmdk-list {
+  overflow-y: auto;
+  padding: 6px 6px 8px;
+  flex: 1;
+  min-height: 60px;
+  max-height: 50vh;
+}
+
+.cmdk-list::-webkit-scrollbar { width: 5px; }
+.cmdk-list::-webkit-scrollbar-thumb {
+  background: var(--border, #e3e5e9);
+  border-radius: 3px;
+}
+
+.cmdk-empty {
+  padding: 18px 14px;
+  font-size: 13px;
+  color: var(--text-faint, #9aa0a8);
+  text-align: center;
+}
+
+.cmdk-group { margin-top: 4px; }
+.cmdk-group[hidden] { display: none; }
+
+[cmdk-group-heading] {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-faint, #9aa0a8);
+  padding: 10px 14px 4px;
+}
+
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  margin: 1px 0;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text, #1c1d21);
+}
+.cmdk-item[data-selected="true"] {
+  background: var(--selected, var(--accent-soft, #e2eafc));
+}
+
+.cmdk-item__code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 700;
+  font-size: 13px;
+  /* MedBill: shorter than Tariff's 10-digit HMRC codes. DRGs 3 digits,
+     POS 2, modifier 2-3 — 50px holds everything. */
+  min-width: 50px;
+  color: var(--text, #1c1d21);
+}
+
+.cmdk-item__desc {
+  flex: 1;
+  color: var(--text-dim, #6b6f76);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmdk-item__icon {
+  width: 18px;
+  display: inline-flex;
+  justify-content: center;
+  color: var(--text-faint, #9aa0a8);
+  font-size: 14px;
+}
+
+.cmdk-item__label { flex: 1; }
+
+.cmdk-item__hint {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-faint, #9aa0a8);
+  padding: 1px 6px;
+  border: 1px solid var(--border, #e3e5e9);
+  border-radius: 4px;
+  background: var(--pane-2, #fafbfc);
+}
