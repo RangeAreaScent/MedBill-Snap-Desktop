@@ -149,6 +149,83 @@ impl Layout {
         }
     }
 
+    /// Polish — centered text. Used for the report title so each page's
+    /// header looks like a document, not a left-aligned bullet list.
+    fn text_centered(&mut self, s: &str, size: f32, bold: bool) {
+        let font = if bold {
+            self.bold.clone()
+        } else {
+            self.regular.clone()
+        };
+        let line_h = size * 1.34 * MM_PER_PT;
+        let avail = PAGE_W - 2.0 * MARGIN;
+        for line in wrap(s, size, avail) {
+            if self.y < BOTTOM_LIMIT {
+                self.new_page();
+            }
+            // Width estimate in mm: 0.5 em per unit × pt size × mm/pt.
+            let text_w_mm = 0.5 * size * (MM_PER_PT) * (units(&line) as f32);
+            let x = mm_to_pt((PAGE_W - text_w_mm).max(MARGIN) / 2.0);
+            let y = mm_to_pt(self.y);
+            self.cur.push(Op::SetTextMatrix {
+                matrix: TextMatrix::Translate(Pt(x), Pt(y)),
+            });
+            self.cur.push(Op::SetFontSize {
+                size: Pt(size),
+                font: font.clone(),
+            });
+            self.cur.push(Op::WriteText {
+                items: vec![TextItem::Text(line)],
+                font: font.clone(),
+            });
+            self.y -= line_h;
+        }
+    }
+
+    /// Polish — light-gray horizontal rule between row groups.
+    /// y position is `self.y + 4.5mm` per the IMPROVEMENT_PLAN warning:
+    /// `self.y` is the NEXT row's baseline, so the rule needs to sit
+    /// above it. Smaller values (eg +0.5) draw THROUGH glyphs.
+    fn hr(&mut self) {
+        let y_pt = mm_to_pt(self.y + 4.5);
+        let x_left = mm_to_pt(MARGIN);
+        let x_right = mm_to_pt(PAGE_W - MARGIN);
+        // End the current text section so vector ops draw outside it.
+        self.cur.push(Op::EndTextSection);
+        self.cur.push(Op::SetOutlineColor {
+            col: Color::Rgb(Rgb {
+                r: 0.82,
+                g: 0.82,
+                b: 0.84,
+                icc_profile: None,
+            }),
+        });
+        self.cur.push(Op::SetOutlineThickness { pt: Pt(0.5) });
+        self.cur.push(Op::DrawLine {
+            line: Line {
+                points: vec![
+                    LinePoint {
+                        p: Point {
+                            x: Pt(x_left),
+                            y: Pt(y_pt),
+                        },
+                        bezier: false,
+                    },
+                    LinePoint {
+                        p: Point {
+                            x: Pt(x_right),
+                            y: Pt(y_pt),
+                        },
+                        bezier: false,
+                    },
+                ],
+                is_closed: false,
+            },
+        });
+        // Re-enter text mode so subsequent .text() calls work.
+        self.cur.push(Op::StartTextSection);
+    }
+
     fn text(&mut self, s: &str, size: f32, indent: f32, bold: bool) {
         let font = if bold {
             self.bold.clone()
@@ -205,17 +282,21 @@ pub fn export(path: &str, title: &str, entries: &[ExportEntry]) -> Result<(), St
 
     let mut layout = Layout::new(regular_id, bold_id);
 
-    layout.text(title, 18.0, 0.0, true);
+    // Polish — centered title + dataset attribution line.
+    layout.text_centered(title, 18.0, true);
     layout.gap(1.5);
-    layout.text(
-        &format!("{} items  -  MedBill Snap (FY 2026)", entries.len()),
+    layout.text_centered(
+        &format!("{} items  ·  MedBill Snap (CMS FY 2026)", entries.len()),
         9.0,
-        0.0,
         false,
     );
-    layout.gap(5.0);
+    layout.gap(6.0);
 
-    for e in entries {
+    for (i, e) in entries.iter().enumerate() {
+        // Polish — gray separator between rows (not before the first).
+        if i > 0 {
+            layout.hr();
+        }
         let header = if e.kind.is_empty() {
             e.code.clone()
         } else {

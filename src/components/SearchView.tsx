@@ -16,6 +16,12 @@ interface Props {
   onSelect: (item: LibraryItem) => void;
 }
 
+/** Phase D+ Polish — result sort key. Defaults to "relevance" (the
+ *  order the backend returned, which prioritizes code-prefix hits then
+ *  FTS rank). "code" forces an ascending displayCode order — useful
+ *  when the user wants a deterministic numeric/alphabetic scan. */
+type SortKey = "relevance" | "code";
+
 const MODES: { id: SearchMode; label: string; placeholder: string }[] = [
   {
     id: "pos",
@@ -43,6 +49,7 @@ export function SearchView({ selected, onSelect }: Props) {
   const [mode, setMode] = useState<SearchMode>("pos");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [sortBy, setSortBy] = useState<SortKey>("relevance");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { isFavorite, toggleFavorite } = useAppData();
@@ -97,12 +104,26 @@ export function SearchView({ selected, onSelect }: Props) {
 
   const trimmed = query.trim();
 
+  // Polish — apply sortBy. "relevance" keeps backend order; "code"
+  // sorts by displayCode (numeric DRGs sort naturally as strings since
+  // they're zero-padded; POS / modifier alphanumeric sorts intuitively).
+  const sortedResults = useMemo<SearchResult[]>(() => {
+    if (sortBy === "relevance") return results;
+    const out = [...results];
+    out.sort((a, b) => {
+      const ca = "code" in a ? a.code : a.number;
+      const cb = "code" in b ? b.code : b.number;
+      return ca.localeCompare(cb, undefined, { numeric: true });
+    });
+    return out;
+  }, [results, sortBy]);
+
   // Phase A — wire ↑↓ navigation. Results are SearchResult (tagged union),
   // but the hook needs items keyed by `LibraryItem.key`. Map once per
-  // results change.
+  // sortedResults change so navigation order matches what the user sees.
   const navItems = useMemo<LibraryItem[]>(
-    () => results.map(toLibraryItem),
-    [results],
+    () => sortedResults.map(toLibraryItem),
+    [sortedResults],
   );
   useListKeyNav(navItems, selected?.key ?? null, onSelect);
 
@@ -147,6 +168,34 @@ export function SearchView({ selected, onSelect }: Props) {
         )}
       </div>
 
+      {/* Polish — Relevance / Code segmented sort toggle. Hidden when
+          there are no results so the search-bar/list stay flush. */}
+      {results.length > 0 && (
+        <div className="sort-bar">
+          <span className="sort-bar__count">
+            {results.length} {modeLabel(mode)} result{results.length === 1 ? "" : "s"}
+          </span>
+          <div className="sort-bar__segmented" role="tablist" aria-label="Sort order">
+            <button
+              role="tab"
+              aria-selected={sortBy === "relevance"}
+              className={`sort-bar__opt${sortBy === "relevance" ? " sort-bar__opt--on" : ""}`}
+              onClick={() => setSortBy("relevance")}
+            >
+              Relevance
+            </button>
+            <button
+              role="tab"
+              aria-selected={sortBy === "code"}
+              className={`sort-bar__opt${sortBy === "code" ? " sort-bar__opt--on" : ""}`}
+              onClick={() => setSortBy("code")}
+            >
+              Code
+            </button>
+          </div>
+        </div>
+      )}
+
       <ul className="list-scroll">
         {error && <li className="state-msg state-msg--error">{error}</li>}
         {!error && !trimmed && <EmptyHint mode={mode} />}
@@ -156,7 +205,7 @@ export function SearchView({ selected, onSelect }: Props) {
             <p>Nothing matches "{trimmed}" in {modeLabel(mode)}.</p>
           </li>
         )}
-        {results.map((r) => {
+        {sortedResults.map((r) => {
           const item = toLibraryItem(r);
           return (
             <CodeRow
@@ -173,6 +222,7 @@ export function SearchView({ selected, onSelect }: Props) {
     </div>
   );
 }
+
 
 function EmptyHint({ mode }: { mode: SearchMode }) {
   if (mode === "pos") {
