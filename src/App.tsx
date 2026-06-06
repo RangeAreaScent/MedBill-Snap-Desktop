@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import "./styles.css";
 import { AppDataProvider, useAppData } from "./state";
 import { SettingsProvider } from "./settings";
@@ -13,6 +14,7 @@ import { SettingsView } from "./components/SettingsView";
 import { AddToCollectionModal } from "./components/AddToCollectionModal";
 import { CollectionFormModal } from "./components/CollectionFormModal";
 import { PremiumPromptModal } from "./components/PremiumPromptModal";
+import { StatusBar } from "./components/StatusBar";
 import { showToast, Toaster } from "./components/Toaster";
 
 type Tab =
@@ -130,6 +132,77 @@ function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selected, isFavorite, toggleFavorite, removeFavorite]);
 
+  // Phase D — wire native menu events to the same handlers the keyboard
+  // shortcuts use. Menu IDs are defined in src-tauri/src/menu.rs and
+  // must match exactly (hard-coded contract).
+  useEffect(() => {
+    const unlistens: Array<Promise<() => void>> = [];
+
+    function on(id: string, fn: () => void) {
+      unlistens.push(listen(`menu:${id}`, fn));
+    }
+
+    on("file.new_search", () => {
+      setTab("search");
+      setTimeout(() => {
+        const input = document.querySelector(
+          ".search-bar__input",
+        ) as HTMLInputElement | null;
+        input?.focus();
+      }, 0);
+    });
+    on("file.command_palette", () => {
+      // Phase C — will toggle the palette once cmdk lands.
+      // For now, just bring focus to the search bar as the closest equivalent.
+      showToast("Command palette — landing in Phase C");
+    });
+    on("file.export_collection", () => {
+      // Re-dispatch the keyboard event CollectionsView listens for. Goes
+      // through the same ⌘E path the keyboard contract uses.
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "e", metaKey: true }),
+      );
+    });
+
+    on("edit.copy_code", () => {
+      if (!selected) return;
+      navigator.clipboard
+        .writeText(selected.displayCode)
+        .then(() => showToast(`Copied ${selected.displayCode}`))
+        .catch(() => showToast("Copy failed"));
+    });
+    on("edit.find", () => {
+      setTab("search");
+      setTimeout(() => {
+        const input = document.querySelector(
+          ".search-bar__input",
+        ) as HTMLInputElement | null;
+        input?.focus();
+      }, 0);
+    });
+
+    on("view.tab_search", () => setTab("search"));
+    on("view.tab_calculator", () => setTab("calculator"));
+    on("view.tab_drg", () => setTab("drg"));
+    on("view.tab_favorites", () => setTab("favorites"));
+    on("view.tab_collections", () => setTab("collections"));
+    on("view.tab_settings", () => setTab("settings"));
+    on("view.reset_splitter", () => {
+      // Phase B — splitter lands next; this just clears the persisted
+      // width and notifies via toast so the menu item is non-no-op today.
+      localStorage.removeItem("snap.listWidth");
+      document.documentElement.style.setProperty("--list-width", "42%");
+      showToast("Splitter width reset");
+    });
+
+    on("help.how_to_use", () => setTab("settings"));
+    on("help.database_details", () => setTab("settings"));
+
+    return () => {
+      unlistens.forEach((p) => p.then((fn) => fn()).catch(() => {}));
+    };
+  }, [selected]);
+
   // Esc priority — close palette > narrow detail > return focus to search input.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -149,7 +222,8 @@ function AppShell() {
   }, [tab]);
 
   return (
-    <div className="shell">
+    <div className="app">
+      <div className="app__main">
       <nav className="tab-bar">
         {TABS.map((t) => (
           <button
@@ -233,6 +307,8 @@ function AppShell() {
         />
       )}
 
+      </div>{/* /.app__main */}
+      <StatusBar />
       <Toaster />
     </div>
   );

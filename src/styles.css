@@ -1413,9 +1413,31 @@ button {
 /* see src/components/*.tsx for usage.                                  */
 /* =================================================================== */
 
-/* --- App shell --- */
+/* --- App shell — Phase D: column layout so the status bar can sit
+   at the bottom across the full window width. The inner .app__main
+   keeps the row layout (sidebar | main content). min-height:0 is
+   REQUIRED on .app__main — without it, the status bar gets pushed
+   off-screen by the main area's intrinsic content height. */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  font-family: var(--ui-font, -apple-system, "Segoe UI", Roboto, sans-serif);
+  color: var(--text, #1c1d21);
+  background: var(--bg, #f4f5f7);
+}
+.app__main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Legacy alias — older code referenced .shell. Keep working during the
+   transition; safe to remove once no rules use it. */
 .shell {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   width: 100vw;
   font-family: var(--ui-font, -apple-system, "Segoe UI", Roboto, sans-serif);
@@ -1926,4 +1948,64 @@ button {
   border-bottom-width: 2px;
   border-radius: 4px;
   color: var(--text, #1c1d21);
+}
+
+/* =================================================================== */
+/* Phase D — bottom status bar                                          */
+/* =================================================================== */
+.status-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--pane-2, #fafbfc);
+  border-top: 1px solid var(--border, #e3e5e9);
+  font-size: 11px;
+  color: var(--text-faint, #9aa0a8);
+  user-select: none;
+}
+.status-bar__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+.status-bar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent, #2f6df0);
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+.status-bar__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-bar__right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.status-bar__hint {
+  font-size: 11px;
+  color: var(--text-faint, #9aa0a8);
+}
+.status-bar__kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  margin: 0 1px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--pane, #ffffff);
+  border: 1px solid var(--border, #e3e5e9);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  color: var(--text-dim, #6b6f76);
 }
